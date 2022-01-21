@@ -1,0 +1,1 @@
+[alphasol,fval] = fmincon( @(alpha) Likelihood_ZarekEdit(alpha,R,EPS,nIs,nPlans,nTs,HTC,Sim,K,EUvector11,EUvector21,EUvector31,EUvector12,EUvector22,EUvector32,EUvector13,EUvector23,EUvector33,choice,choice12,choice22,choice32,choice13,choice23,choice33,Income,Tier2,IND,FSAY2,FSAY3,QS,managerX,CC1,CC2,CSAL2,CSAL3,MAge), alpha0,[],[],[],[],lb,ub,[],options);
