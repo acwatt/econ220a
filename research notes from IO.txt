@@ -1,0 +1,87 @@
+Kaitlin Springel EV's and charging station:
+- hedonic model of cars with "attributes" that include consumer's perception of availability and cost of charging stations
+
+
+
+does gov't investment Crowd in vs crowd out private investment in space tech? How much crowding in?
+
+
+
+==============================================================
+      Meeting with Ben 2020
+==============================================================
+
+1. emerging market: what types of subsidies would start the market?
+- subsidies on rockets (transportation)
+- subsidies on space techonology (mining equipment, habitation)
+
+
+
+
+
+
+
+
+2. mining / supply chain
+- NASA has annouced that they want to support and spur an emerging space economy
+- mining companies (fixed costs, market power, barriers to entry, market structure)
+- assume water is the only mined resource
+- plenty of customers in space that need water for radiation shielding, human habitation, fuel
+- mining company does not own the rockets (hires a transportation company like spaceX)
+- invests in R&D and mining equipment
+- NASA has a
+
+
+Optimal resource extraction
+What are the things about the market that seem extremeley different from an IO point? Look at nearest markets, like oil or other mining, and list down what's different and what could be borrowed
+- energy markets
+- nuclear power (heavily support by the gov't at the beginning)
+
+If there are large positive externalities ==> reasoning for heavy subsidies
+
+
+
+
+
+
+
+3. permitting pollution
+
+cap & trade or subsidies:
+- take CO2 cap & trade -- is there something fundementally different about the space version vs the earth version 
+- find one key element that is different from the earth version that might change the intuition about the optimal solutions
+
+
+
+
+
+
+4. property rights
+- how do property rights (internationally public vs nationally public vs private) affect companies' or venture capitalists' willingness to invest in moon operations?
+- theoretical model of property rights on the moon, with demand for seeing earth vs demand for sunshine vs demand for water
+
+Stock market valuation changes from information shocks about property rights or other things that investors use as signals of future profitability
+- using something about valuations
+
+
+
+
+
+
+Antarcitca: hard to access.
+How would you want property rights to evovlve? 
+Could there be a transition from public property rights to private property rights -- when would that be?
+Could think about parallels with colonization
+
+
+
+
+
+
+
+
+
+
+
+
+
