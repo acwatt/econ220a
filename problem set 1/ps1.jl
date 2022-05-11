@@ -30,6 +30,13 @@ Random.seed!(0);
 # Optimizing functions
 using Optim, NLSolversBase
 using LinearAlgebra: diag
+using JuMP, KNITRO
+# Parallelize!
+# using Distributed
+# addprocs(2)
+
+# # Ensure BlackBoxOptim loaded on all workers
+# @everywhere using BlackBoxOptim
 
 
 
@@ -147,7 +154,7 @@ function simulate_risk_dist(; α_mean, α_sd, α_income, α_age, rand_coef)
     dist = means .+ sd
     dist = repeat(dist, outer=(1, 1, K))  # dim = nIs x Sim x K
     # maximum of matrix and 0.000001, truncating coefficients above 0
-    return elmax(dist, 0.000001)
+    return max.(dist, 0.000001)
 end
 
 
@@ -157,7 +164,7 @@ function simulate_ppo1200_dist(; αm_sgl, αsd_sgl, αm_fam, αsd_fam, rand_coef
     dist = IND' .* (αm_sgl .+ αsd_sgl*rand_coef) .+ (1 .- IND') .* (αm_fam .+ αsd_fam*rand_coef)  # dim = nIs x Sim
     dist = repeat(dist, outer=(1, 1, K))  # dim = nIs x Sim x K
     # maximum of matrix and 0.000001, truncating coefficients above 0
-    return elmax(dist, 0.000001)
+    return max.(dist, 0.000001)
 end
 
 
@@ -387,10 +394,10 @@ function nLL(α)
     #          156       0       0       0]
     # Create (nIs,K,Sim) matrix of random coefficient distributions for risk preference
     γₖ = simulate_risk_dist(α_mean = α[1,1],
-                              α_income = α[1,2], 
-                              α_age = α[1,3], 
-                              α_sd = α[1,4], 
-                              rand_coef = randcoef_risk)
+                            α_income = α[1,2], 
+                            α_age = α[1,3], 
+                            α_sd = α[1,4], 
+                            rand_coef = randcoef_risk) # this is defined in ps1_transformdata.jl
     
     
     #==========================================================
@@ -542,6 +549,8 @@ function nLL(α)
             x = mat_dict["EUvector$plan$year"] + δₖ₁₂₀₀ + H
         end
         Usim["$plan$year"] = -exp.(-γₖ .* x) ./ γₖ
+        # Usim["$plan$year"] = -exp.(BigFloat.(-γₖ .* x)) ./ γₖ
+        # println("$plan $year ", mean(Usim["$plan$year"]), " ", mean(x), " ", mean(γₖ))
     end
 
     
@@ -568,6 +577,7 @@ function nLL(α)
     for year ∈ 1:3
         # Preallocate an nIs x nPlans x Sim matrix with zeros (faster)
         Umean["$year"] = zeros(nIs, Sim, nPlans)
+        # Umean["$year"] = zeros(BigFloat, nIs, Sim, nPlans)
         for (i, plan) ∈ enumerate(plans)
             # Fill in each of the nIs x Sim matrices with the mean of the K health simulations
             # Each element of the below nIs x Sim matrix is the mean of the K health simulation values 
@@ -581,6 +591,8 @@ function nLL(α)
     for year ∈ 1:3, i ∈ 1:3
         Umean["$year"][:, :, i] = Umean["$year"][:, :, 3] ./ Umean["$year"][:, :, i]
     end
+
+    # for year ∈ 1:3; println("Umean $year: ", minimum(Umean["$year"]), " ", mean(Umean["$year"]), " ", maximum(Umean["$year"])); end
 
     # for year ∈ 1:3
     #     # Make sure that all elements of the bottom stack are 1 (for PPO1200)
@@ -649,8 +661,10 @@ function nLL(α)
     ==========================================================#
     # Use the observed choice to select and multiply the probabilities
     probs = ones(nIs, Sim)
+    # probs = ones(BigFloat, nIs, Sim)
     for year ∈ 1:3
         yearprobs = zeros(nIs, Sim)
+        # yearprobs = zeros(BigFloat, nIs, Sim)
         # 
         for plan ∈ 1:3
             # Indicator for if the family chose this plan-year (row is 1 if so, 0 otherwise)
@@ -673,7 +687,9 @@ function nLL(α)
     meanprobs = mean(probs, dims=2)
     
     # return the log-likelihood
-    return -sum(log.(meanprobs))
+    value = -sum(log.(meanprobs))
+    println("Function Value: $(round(value))")
+    return value
 end
 
 
@@ -713,6 +729,53 @@ a non-linear optimizer to find the parameter values that yield that
 highest likelihood function value. This question takes you through
 that process:
 ==============================================================================#
+# Try adding manual large likelihood values for parameters outside the bounds
+function nLL_bound(α)
+    lower_violation = sum(α .< lb) > 0
+    upper_violation = sum(α .> ub) > 0
+    if lower_violation || upper_violation
+        # Return large value so the algorithm keeps searching inside the bounds
+        return Inf
+    else
+        return nLL(α)
+    end
+end
+
+# Create an nLL wrapper to pass individual parameter elements to
+function nLL_wrapper(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21)
+    α = [
+        a1   a7  a12  a17
+        a2   a8  a13  a18
+        a3   a9  a14  a19
+        a4  a10  a15  a20
+        a5  a11  a16  a21
+        a6    0.    0.    0.
+    ]
+    return nLL(copy(α))
+end
+
+function nLL_vec(a::Vector)
+    return nLL_wrapper(a...)
+end
+
+function transform_to_mat(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21)
+    α = [
+        a1   a7  a12  a17
+        a2   a8  a13  a18
+        a3   a9  a14  a19
+        a4  a10  a15  a20
+        a5  a11  a16  a21
+        a6    0.    0.    0.
+    ]
+    return copy(α)
+end
+
+function transform_to_21vec(x::AbstractMatrix)
+    y = reshape(copy(x), 24, 1)
+    # remove the (6,2), (6,3), and (6,4) elements
+    y = deleteat!(vec(y), [12, 18, 24])
+    return y
+end
 
 
 
@@ -738,16 +801,8 @@ lb = [
         -Inf       0.0      0.0  -5000.0
       -5000.0  -5000.0  -5000.0  -5000.0
       -5000.0      0.0      0.0      0.0
-     ]
-
-ub = [
-        2.0      1.0      1.0      1.0
-        Inf      Inf      Inf      Inf
-    20000.0  20000.0  20000.0  20000.0
-        Inf   20000.0  20000.0   5000.0
-    5000.0   5000.0   5000.0   5000.0
-    5000.0      0.0      0.0      0.0
-     ]
+]
+lb_vec = transform_to_21vec(lb)
 
 α₀ = [
         0.06     0.003      0.0     0.04
@@ -756,9 +811,36 @@ ub = [
      -500.0   1250.0     1750.0  -500.0
         0.0      0.0        0.0     0.0
         0.0      0.0        0.0     0.0
-    ]
+]
+α₀_vec = transform_to_21vec(α₀)
 
 
+ub = [
+        2.0      1.0      1.0      1.0
+        Inf      Inf      Inf      Inf
+    20000.0  20000.0  20000.0  20000.0
+        Inf   20000.0  20000.0   5000.0
+    5000.0   5000.0   5000.0   5000.0
+    5000.0      0.0      0.0      0.0
+]
+ub_vec = transform_to_21vec(ub)
+
+α₂ = [
+    0.000223     2.9e-5      2.27e-6     0.000188
+    -2912.0        843.0     -2871.0       897.0
+      204.0        502.0       329.0       811.0
+      856.0       2480.0      1729.0      -551.0
+      -32.0          5.0       198.0        80.0
+      156.0          0.0         0.0         0.0
+]
+α₂_vec = transform_to_21vec(α₂)
+
+function stack_cols(x)
+    rows, cols = size(x)
+end
+
+α₃ = reshape(α₂, 24, 1)[1:21]
+reshape([α₃; [0,0,0]], 6, 4)
 
 
 
@@ -777,7 +859,90 @@ mal draws and objects from 1c, and the matrices from 1d which
 help speed things up. Interpret this value of the likelihood
 function, what does it mean?
 ==========================================================#
-@time nLL(α₀)
+@time nLL(α₀)  # 6116.314354461145
+
+@time nLL(α₂)  # 7428.797342352567
+
+a2 = [
+    0.304718      0.927983      0.514715      0.599309
+    -4540.06       3875.96       8052.78       1024.7
+     5074.24       3919.88        794.49      11247.8
+     6998.8       14282.5       18565.5        1949.27
+    -1942.63      -3566.87      -4394.86       2534.03
+     1550.16          0.0           0.0           0.0
+]
+@time nLL(a2)
+
+
+alpha0 = [
+    0.06 0.003 0 0.04
+     -2500 700 -2200 800
+    300 800 300 800
+    -500 1250 1750 -500
+    0 0 0 0
+    0 0 0 0
+]
+
+# Starting values also run for this simulated data code  to find best likelihood value. Actual alpha0 used here above was one with highest likelihood value. 
+
+alpha1 = [
+    0.1 0.04 0 0.03
+     900 0.1 1500 500
+    800 300 800 300
+    -2500 700 1500 -200
+    20 100 100 -100
+    -100 0 0 0
+]
+alpha2 = [
+    0.3 0.1 -0.0003 0.08
+     600 0.1 2500 300
+    500 200 500 200
+    -1500 700 1200 -800
+    200 0 0 -200
+    -100 0 0 0
+]
+alpha3 = [
+    0.5 0.02 -0.0003 0.03
+     1500 0.1 1700 1
+    400 150 400 150
+    -1000 500 1500 -500
+    0 50 200 -100
+    100 0 0 0
+]
+alpha4 = [
+    0.9 0.05 0.003 0.06
+     1000 0.1 1500 100
+    150 150 150 150
+    -2000 800 1050 -700
+    -50 -50 100 100
+    -50 0 0 0
+]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -812,6 +977,223 @@ what you get for:
     -The final likelihood function value at the estimated parame-
         ters (i.e. the ’maximum’ likelihood function value)
 ==========================================================#
+
+#= ####################################################### 
+        BASIC JULIA OPTIM PACKAGE
+- The function is not auto-differentiable, so needed to use
+    a "derivative-free" algorithm with parameter bounds.
+- Two algorithms in the optim.jl package works for this:
+    1. NelderMead() is the default
+    2. SAMIN() Simulated Annealing with bounds
+
+After some testing, the Simulated Annealing algorithm seemed
+to preform better -- faster iterations and lower objective
+function values for the same number of iterations. This does
+not mean that it's more likely than the NelderMead algorithm
+to converge on the global minimum, but for the purposes of 
+testing different starting parameter values with a relatively
+small number of iterations (compared to what I will be
+using with the Knitro package), Simulated Annealing can give
+me a better quick idea of how starting parameter values
+affect the estimated minimizing parameter values.
+
+Below I show the results of minimizing the objective function
+using the SAMIN algorithm with different starting parameters,
+limiting to 500 iterations for each run. I also compare these
+results to the Knitro package, run for X hours, from the first 
+suggested starting values. Just due to lack of time, I end the
+estimation there, with the understanding that for real research,
+these may need to run for longer on a better computer with higher
+precision data types (see below section).
+
+There also exists the BlackBoxOptim package, which might be
+better, but it does not work well when much of the domain
+of the function returns NaN. The loglikelihood function 
+returns NaN at some parameter
+values that are far from the starting point alpha0. This
+happens because some of the X values are large in the 
+utility function, so when calculating e^(-γ*x), this 
+evaluates to zero when using the Float64 data type.
+The obvious solution would be to use a more precise data type,
+and BigFloat is the next largest (without creating my own 
+custom datatype) and has arbitrary precision. But when the 
+numbers are very small (on the order of 10^-2000), this can
+take up a large amount of memory. As a result, each evaluation
+of the log-likelihood function takes a very long time to run
+when using BigFloats.
+
+This might be the best solution
+to fully explore the parameter space, but sadly my computer
+doesn't seem to have enough RAM to run this with BigFloats,
+and it would seem to take an extremely long time. This could
+be parallelized with the Distributed library, but I decided
+to focus on other methods that would get me quicker results.
+I am working on a maximum likelihood project in Julia over
+the summer, however, my summer
+project lends well to taking derivatives, so I will likely
+stick to gradient decent and other more optimized packages.
+I am keeping these methods in mind for more complex likelihood
+functions that don't have easy gradients to derive (or they
+don't exist ex-ante). If I needed to use BigFloats for a 
+research project like this, I would probably spin-up an
+AWS elastic compute instance to run something like this
+in parallel, where the RAM and CPU can scale easily.
+=# #######################################################
+
+
+# resNM = Optim.optimize(nLL, lb, ub, α₀, NelderMead(), Optim.Options(iterations=50))
+# Optim.minimizer(resNM)
+# Optim.minimum(resNM)
+# Optim.iterations(resNM)
+
+#=
+julia> Optim.minimizer(resNM)
+6×4 Matrix{Float64}:
+     0.0562571      0.00166986     -0.000166282     0.0449254
+ -2537.15         704.085       -2193.35          791.564
+   293.436        768.017         310.136         828.315
+  -504.87        1318.41         2331.0          -485.404
+     0.00150326     0.00103796      0.00128919      0.00140051
+     0.0011686      7.95876e-5     -0.000276149    -0.000799145
+
+julia> minimum(resNM)
+5438.954383339348
+
+    Seconds run:   967  (vs limit Inf)
+    Iterations:    50
+    f(x) calls:    567
+=#
+
+# Time limit for each of 5 iterations to finish in 8 hours (in seconds)
+time_limit5 = round(8*3600/5)
+max_iter = 40_000
+
+results = Dict(); i=0;
+for a ∈ [alpha0, alpha1, alpha2, alpha3, alpha4]
+    resSM = Optim.optimize(nLL_vec, transform_to_21vec(lb), transform_to_21vec(ub), 
+        transform_to_21vec(a), SAMIN(), 
+        Optim.Options(time_limit=time_limit5, iterations=max_iter))
+    results[i] = resSM
+    open("SAMIN-log.txt", "a") do io
+        write(io, "\n"^6 * "="^30 * " alpha$i" * "="^30)
+        write(io, "\nStarting Value:\n $(a)")
+        write(io, "\nFinal Value:\n $(transform_to_mat(Optim.minimizer(resSM)...))")
+        write(io, "\n\nresult:\n $(resSM)")
+    end
+    i += 1
+end
+
+
+Optim.minimum(resSM)
+Optim.iterations(resSM)
+
+    # exampleFileIOStream =  open("SAMIN-log.txt","a")
+    # show(io, r)
+    # write(exampleFileIOStream, String(r));
+
+#=
+    Seconds run:   881  (vs limit Inf)
+    Iterations:    500
+    f(x) calls:    500
+
+julia> transform_to_mat(Optim.minimizer(resSM)...)
+6×4 Matrix{Float64}:
+     0.117723     0.003      0.0      0.0231414
+ -2500.0        700.0    -2200.0    800.0
+  2261.76       774.929  10840.0   5409.73
+  -500.0       6194.61   18091.9   3767.75
+  4821.58       918.947   1555.81  3199.44
+  1523.74         0.0        0.0      0.0
+
+julia> Optim.minimum(resSM)
+2726.895823664534
+
+
+
+
+
+    Seconds run:   85  (vs limit Inf)
+    Iterations:    50
+    f(x) calls:    50
+
+julia> transform_to_mat(Optim.minimizer(resSM)...)
+6×4 Matrix{Float64}:
+     0.0343474      0.003      0.0      0.04
+ -2500.0          700.0    -2200.0    800.0
+   300.0          800.0      300.0    800.0
+  -500.0        13798.4     9318.86  4925.84
+   883.136       3443.94    3707.89   463.592
+  3660.78           0.0        0.0      0.0
+
+julia> Optim.minimum(resSM)
+4130.821817817749
+
+=#
+
+
+
+
+
+#= ####################################################### 
+        KNITRO PACKAGE
+The Knitro package has changed a little bit since the 2013 paper
+but I was able to get it working in Julia. Sadly, the Julia
+wrapper has some limitations -- it cannot parallelize (there
+is an open GitHub issue about this, and needs to be resolved
+by the folks at Artelys / Knitro). This means that I could
+not run the multi-start function efficiently, which would
+have allowed me to explore effects of starting parameters
+much better. So I chose to just use one run of knitro, and 
+compare it to other runs of the Julia Optim package with
+the other starting parameter values. Knitro seems to take
+longer but more reliably minimizes the objective function.
+(After just a few hours, it got to a lower value than
+leaving the NelderMead alogrithm to run for 7.1 hours). 
+
+
+
+
+
+
+Final Statistics
+----------------
+Final objective value               =   2.57664797201973e+03
+Final feasibility error (abs / rel) =   0.00e+00 / 0.00e+00
+Final optimality error  (abs / rel) =   6.66e-04 / 6.66e-04
+# of iterations                     =        437 
+# of CG iterations                  =         64 
+# of function evaluations           =      11643
+# of gradient evaluations           =          0
+Total program time (secs)           =   25651.86133 ( 25372.193 CPU time)
+Time spent in evaluations (secs)    =   25585.15820
+
+Solution Vector
+---------------
+x[       0] =   5.81624945391e-03,   lambda[       0] =  -3.63790430279e-02
+x[       1] =  -2.50000000000e+03,   lambda[       1] =   0.00000000000e+00
+x[       2] =   1.87592278071e+02,   lambda[       2] =   2.49507016724e-09
+x[       3] =  -5.00034030392e+02,   lambda[       3] =   0.00000000000e+00
+x[       4] =   4.99999999058e+03,   lambda[       4] =   5.64592286220e-03
+x[       5] =   1.29503272026e+03,   lambda[       5] =   1.71430243683e-07
+x[       6] =  -4.76759555815e-04,   lambda[       6] =  -3.26926845896e-01
+x[       7] =   7.01983506841e+02,   lambda[       7] =  -0.00000000000e+00
+x[       8] =   1.00000257523e+00,   lambda[       8] =  -2.41087625472e-02
+x[       9] =   1.26422116323e+04,   lambda[       9] =   1.47032612412e-07
+x[      10] =  -2.42213712488e+03,   lambda[      10] =   3.32056214322e-08
+x[      11] =  -1.25474724273e-05,   lambda[      11] =  -5.42619286981e+00
+x[      12] =  -2.20000420498e+03,   lambda[      12] =   0.00000000000e+00
+x[      13] =   7.65718286314e+03,   lambda[      13] =   6.34971662095e-09
+x[      14] =   1.99999999789e+04,   lambda[      14] =   1.89841461382e-03
+x[      15] =   4.99999947757e+03,   lambda[      15] =   4.59740794089e-04
+x[      16] =   2.93511072139e-05,   lambda[      16] =   2.48833069306e-01
+x[      17] =   8.01689955868e+02,   lambda[      17] =  -7.06225156035e-11
+x[      18] =   1.00000330348e+00,   lambda[      18] =  -2.66111523059e-02
+x[      19] =   4.63907933581e+03,   lambda[      19] =   1.12066338522e-06
+x[      20] =   4.99999992143e+03,   lambda[      20] =   6.49951182089e-04
+
+===============================================================================
+=# #######################################################
+
 # Create a gradient (and hessian?)
 func = TwiceDifferentiable(nLL, α₀; autodiff=:forward);
 opt = optimize(func, α₀)
@@ -832,25 +1214,240 @@ results = optimize(f, g!, lower, upper, initial_x, Fminbox(inner_optimizer))
 optimize(f, x0, LBFGS(); autodiff = :forward)
 
 
+results = optimize(f, lower, upper, initial_x, NelderMead())
 
 
-# Try adding manual large likelihood values for parameters outside the bounds
-function nLL_bound(α)
-    lower_violation = sum(α .< lb) > 0
-    upper_violation = sum(α .> ub) > 0
-    if lower_violation || upper_violation
-        # Return large value so the algorithm keeps searching inside the bounds
-        return Inf
-    else
-        return nLL(α)
-    end
-end
+
+
 # Nelder-Mead, no Gradient
 opt = optimize(nLL_bound, α₀)
 
 # Could try Simulated Annealing with bounds (SAMIN) https://julianlsolvers.github.io/Optim.jl/stable/#algo/samin/
 
 # Could try Particle Swarm https://julianlsolvers.github.io/Optim.jl/stable/#algo/particle_swarm/
+
+#! Can I use a numerical gradient?
+
+
+
+#=====================
+Try using ConstrainedOptim.jl
+=====================#
+
+fun(x) =  (1.0 - x[1])^2 + 100.0 * (x[2] - x[1]^2)^2
+x0 = [0.0, 0.0]
+df = TwiceDifferentiable(fun, x0)
+lx = [-0.5, -0.5]; ux = [1.0, 1.0]
+dfc = TwiceDifferentiableConstraints(lx, ux)
+res = Optim.optimize(df, dfc, x0, IPNewton())
+res = Optim.optimize(fun, lx, ux, x0, NelderMead())
+resNM = Optim.optimize(nLL, lb, ub, α₀, NelderMead(), Optim.Options(iterations=50))
+resSM = Optim.optimize(nLL_vec, transform_to_21vec(lb), transform_to_21vec(ub), transform_to_21vec(α₀), SAMIN(), Optim.Options(iterations=50))
+
+
+#= BlackBoxOptim does not seem to work. 
+All function evaluations return NaN, 
+seems that all -Inf values convert to Nan, but Inf values are fine.
+Could not find any documentation on this.
+Changed the Inf values to a large number.
+A different issue: nLL() seems to return NaN for some α in the domain.
+Should track down what is blowing up... probably the ℯ^γ utility function?
+=#
+using BlackBoxOptim
+infreplace = 10000
+searchrange = replace.(collect(zip(lb_vec, ub_vec)), -Inf => -infreplace, Inf => infreplace)
+
+resbb = bboptimize(nLL_vec; SearchRange = searchrange, Method = :random_search, MaxTime = 10.0)
+
+function rosenbrock2d(x)
+    return (1.0 - x[1])^2 + 100.0 * (x[2] - x[1]^2)^2
+end
+res = bboptimize(rosenbrock2d; SearchRange = (-5.0, 5.0), NumDimensions = 2)
+
+#=====================
+Parallelize?
+=====================#
+# First run without any parallel procs used in eval
+opt1 = bbsetup(slow_rosenbrock; Method=:xnes, SearchRange = (-5.0, 5.0),
+               NumDimensions = 50, MaxFuncEvals = 5000)
+el1 = @elapsed res1 = bboptimize(opt1)
+t1 = round(el1, digits=3)
+
+# When Workers= option is given, BlackBoxOptim enables parallel
+# evaluation of fitness using the specified worker processes
+opt2 = bbsetup(slow_rosenbrock; Method=:xnes, SearchRange = (-5.0, 5.0),
+               NumDimensions = 50, MaxFuncEvals = 5000, Workers = workers())
+el2 = @elapsed res2 = bboptimize(opt2)
+t2 = round(el2, digits=3)
+
+
+
+
+
+# Example 2
+f(x) = (1.0 - x[1])^2 + 100.0 * (x[2] - x[1]^2)^2
+lower = [1.25, -2.1]
+upper = [Inf, Inf]
+initial_x = [2.0, 2.0]
+inner_optimizer = GradientDescent()
+results = optimize(f, lower, upper, initial_x, Fminbox(inner_optimizer))
+
+
+
+
+############################################# Runs but returns the same initial matrix
+# Try with our example
+inner_optimizer = GradientDescent()
+results = optimize(nLL, lb, ub, α₀, Fminbox(inner_optimizer))
+results2 = optimize(nLL, lb, ub, α₂, Fminbox(inner_optimizer))
+
+
+
+
+
+
+
+
+
+
+
+start_time = time()
+time_to_setup = zeros(1)
+function advanced_time_control(x)
+    println(" * Iteration:       ", x.iteration)
+    so_far =  time()-start_time
+    println(" * Time so far:     ", so_far)
+    if x.iteration == 0
+        time_to_setup[:] = time()-start_time
+    else
+        expected_next_time = so_far + (time()-start_time-time_to_setup[1])/(x.iteration)
+        println(" * Next iteration ≈ ", expected_next_time)
+        println()
+        # return expected_next_time < 13 ? false : true
+    end
+    println()
+    false
+end
+results3 = optimize(nLL_vec, transform_to_21vec(lb), transform_to_21vec(ub), transform_to_21vec(α₂), Fminbox(inner_optimizer), Optim.Options(callback = advanced_time_control))
+############################################
+
+
+
+
+
+
+
+
+
+
+
+
+#########################################
+
+
+
+
+
+
+
+
+
+
+
+#=========
+Try using KNITRO with JuMP
+=========#
+# Example 1
+model = Model(KNITRO.Optimizer)
+
+initval = [-2., 1.]
+@variable(model, x[i=1:2], start=initval[i])
+@NLobjective(model, Min, 100*(x[1] - x[2]^2)^2 + (1 - x[1])^2)
+@constraint(model, x[1] <= 0.5)
+c1 = @constraint(model, x[1] * x[2] >= 1)
+c1 = @constraint(model, x[1] + x[2]^2 >= 0)
+
+a = JuMP.optimize!(model)
+
+using MathOptInterface
+const MOI = MathOptInterface
+MOI.get(model, MOI.VariablePrimal(), x)
+get(model, VariablePrimal(), x)
+
+
+# Example 2
+m = Model(optimizer_with_attributes(KNITRO.Optimizer,
+                                    "honorbnds" => 1, "outlev" => 1, "algorithm" => 4)) # (1)
+@variable(m, x, start = 1.2) # (2)
+@variable(m, y)
+@variable(m, z)
+@variable(m, 4.0 <= u <= 4.0) # (3)
+
+mysquare(x) = x^2
+register(m, :mysquare, 1, mysquare, autodiff = true) # (4)
+
+@NLobjective(m, Min, mysquare(1 - x) + 100 * (y - x^2)^2 + u)
+@constraint(m, z == x + y)
+
+optimize!(m)
+(value(x), value(y), value(z), value(u), objective_value(m), termination_status(m)) # (5)
+
+
+
+
+
+# Apply to our problem
+model = Model(KNITRO.Optimizer)
+
+register(model, :nLL_wrapper, 21, nLL_wrapper, autodiff=false)
+@variable(model, a[i=1:21], start=transform_to_21vec(α₀)[i])
+@NLobjective(model, Min, nLL_wrapper(a[1],a[2],a[3],a[4],a[5],a[6],a[7],a[8],a[9],a[10],a[11],a[12],a[13],a[14],a[15],a[16],a[17],a[18],a[19],a[20],a[21]))
+@constraint(model, transform_to_21vec(lb) .<= a .<= transform_to_21vec(ub))
+
+JuMP.optimize!(model)
+solution_summary(model)
+
+
+
+
+#=========
+Try using KNITRO without JuMP
+=========#
+#! try to find the replication package from the published paper
+
+
+
+
+
+
+
+
+
+#=========
+Try using KNITRO with NLopt for black-box and derivative free
+=========#
+nLL_nlopt(x::Vector, grad::Vector) = nLL_vec(x)
+using NLopt, Optim
+opt = Opt(:LD_MMA, 21)
+opt.min_objective = nLL_nlopt
+opt.lower_bounds = transform_to_21vec(lb)
+opt.upper_bounds = transform_to_21vec(ub)
+opt.maxeval = 1000 # Increase this eventually
+(optf,optx,ret) = NLopt.optimize(opt, transform_to_21vec(α₀))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -894,6 +1491,86 @@ as estimates? Why?
 
 
 
+#==========================================================
+NOTE ON KNITRO SOLVER INSTALLATION
+1. Go to www.artelys.com/solvers/knitro/ to download a trial
+    license. You need to create an account. They will send you
+    an activation email, mine was kinda buggy. When I clicked
+    the link in the email, it said error, but when I went back
+    to the website, I was able to login.
+2. After your account is activated, go back to www.artelys.com/solvers/knitro/
+    and click Download a Trial License. Login, and click
+    the link to download Knitro (of whatever the latest version is)
+3. This will take you to a page with download links on the left
+    and a form on the right. If it's in a different language, click
+    the "en" at the very top right of the screen to change to
+    English. Then click Installer or Archive for the Artelys Knitro 13.0
+    (or whatever version is latest). This will download an .exe or .tar.gz
+    file. 
+4. On the same page, click the fill out the form on the right that says
+    My License. They will email you the license .txt file.
+5. Copy the license file into one of the locations specified in
+    the INSTALL file. I put it in my $HOME directory.
+6. If you downloaded the .tar.gz file, decompress it and put the entire
+    "knitro-XX.X.X..." folder into whatever directory you like. (like a
+    programs directory or something. I put it in $HOME).
+7. Now we need to tell Julia where the knitro folder is, then
+    install knitro:
+- open a juila prompt or wherever you are executing julia
+    scripts. Add the knitro folder location to the environment
+    variables dictionary:
+        `ENV["KNITRODIR"] = "path/to/knitro-XX.X.X-..."`
+    where "path/to/knitro-XX.X.X-..." is your path. For example:
+        `ENV["KNITRODIR"] = "/home/a/knitro-13.0.1-Linux-64"`
+    was my path.
+- Add the knitro package using
+    ```julia
+    julia> ]
+    (v1.7) pkg> add KNITRO
+    ```
+    If it says "Unable to locate KNITRO installation", you might need
+    to restart your julia session if you were running things before.
+    Also, this seems to have issues when running from a jupyter notebook.
+    I suggest you do the installation process from a julia REPL.
+- If that works, next build KNITRO using
+    ```julia
+    julia> ]
+    (v1.7) pkg> build KNITRO
+    ```
+- Test this quickly by `using KNITRO`.
+- If that runs without erorr, test more using KNITRO's test:
+    ```julia
+    julia> ]
+    (v1.1) pkg> test KNITRO
+    ```
+    It will spit out a lot of info, but look for four Test Summary's. 
+    You should see "Test C API", "Test examples",
+    "Test MathOptInterface", and "Test C API License".
+    For me, "Test MathOptInterface" took longer than the other tests,
+    you might need to be patient. At the very end, you should see
+    "Testing KNITRO tests passed", success!
+- I suggest also installing JuMP, it makes the syntax a lot nicer:
+    ```julia
+    julia> ]
+    (v1.7) pkg> add JuMP
+    ```
+    
+- Now it's time to test one of the examples. 
+
+```julia 
+using JuMP, KNITRO
+model = Model(with_optimizer(KNITRO.Optimizer))
+
+initval = [-2., 1.]
+@variable(model, x[i=1:2], start=initval[i])
+@NLobjective(model, Min, 100*(x[1] - x[2]^2)^2 + (1 - x[1])^2)
+@constraint(model, x[1] <= 0.5)
+c1 = @constraint(model, x[1] * x[2] >= 1)
+c1 = @constraint(model, x[1] + x[2]^2 >= 0)
+
+JuMP.optimize!(model)
+```
+==========================================================#
 
 
 

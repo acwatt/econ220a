@@ -1,0 +1,1977 @@
+************************************************************
+************************************************************
+************   Cost Model STATA Estimation      ************
+************  (PART I - Simulations from        ************
+************   cost model for Matlab and        ************
+************   choice model in PART II code     ************
+************   file also included)				************		
+************									************
+************   Ben Handel                       ************
+************									************
+************   Adverse Selection and Inertia    ************
+************   in Health Insurane Markets:      ************
+************   When Nudging Hurts               ************
+************                                    ************
+************   February, 2013                   ************
+************************************************************
+
+****** This file describes estimation of the cost model which is done in STATA. The model behind the estimation 
+****** Is described in detail in an Online Appendix. This file is meant to illustrate how this estimation is done. 
+
+****** Since the paper is based on proprietary data, the cost model estimation file is not accompanied by data and 
+****** is meant to be illustrative. The Part II file in Matlab that creates simulated health risk distributions based
+****** on these estimates, to be used in the choice model, is accompanied by simulated data so that there is 
+****** a clear example people can work through for estimation of the choice model, which is more complex. The cost model 
+****** presented here should be quite straightforward, and something that anyone with a panel data set of administrative
+****** health data can use together with the Online Appendix that describes this measure in detail. 
+
+****** For the purposes of this illustration the following variables are necessary to run the cost model estimation: 
+
+****** Predictive measures based on past year claims and spending to group people into cells (see online appendix for more detail)
+
+*ACG 1 YR ahead predicted mean individual total utilization: 	TOTCRindex_SC  (used to predict total 1 YR future hospital / other expenditures and office visit expenditures)
+*ACG 1 YR ahead predicted mean individual pharmacy utilization: PharmaCR_SC    (used to predict total 1 YR future pharmacy expenditures) 
+*Past 1 YR Total Mental Health expenditures:					MHYEARTOTAL    (used to predict total 1 YR mental health expenditures) 
+
+*NOTE: These measures are all derived by running the Johns Hopkins ACG software on the individual level administrative claims data. Each individual has one of the above measures
+*based on the claims and expenses for their past year of medical utilization, so long as they were present in the past year. See the attached README file for more detail on prior 
+*data processing / forming these key measures. See the Online Appendix on cost model estimation for more detail as well. 
+
+****** Ex post medical expenditures across the four categories the cost model is based on as described in the Online Appendix (Pharmacy, Mental Health, Hospital / All Other, Office Visit)
+
+*Total hospital / all other expenditures in the year following the data the predictive measure above is formed based on:  HTOTAL 
+*Total office visit expenditures in the year following the data the predictive measure above is formed based on: 		  OVTOTAL
+*Total pharmacy expenditures in the year following the data the predictive measure above is formed based on:  			  RXTOTAL
+*Total mental health other expenditures in the year following the data the predictive measure above is formed based on:   MHYEARTOTAL
+
+******* Demographic Information 
+
+*Age, gender are used for estimating some of the cost model distributional parameters as seen below and described in cost model online appendix
+
+use ".........PrimaryData.dta", clear
+
+**********************************************************************************
+**********************************************************************************
+**********************************************************************************
+************** Mental Health Cost Model Estimation
+************** Use past year mental Health expenditures to group similar consumers
+************** Estimate with next year of expenditures based on prior bin
+**********************************************************************************
+**********************************************************************************
+**********************************************************************************
+
+**** NOTE: data are typically stroed in wide format in STATA, so that all years of measures and expenditures for
+**** each individual are contained in one row. In order to do the cost model we reshape the data to be long in STATA
+**** so that each two year consecutive period (with a predictive measure and subsequent expenditure realization) 
+**** counts as its own observation in the cost model. Thus, one person counts as three cost model observations if 
+**** they are present for 4 years in the data (as we used in the final version of the primary specification) 
+
+******************
+****************** Reshaping the data for mental health cost model estimation
+******************
+
+***Start with original dataset with all measures above, all demographics, choices etc. 
+preserve 
+
+keep famid Individual MHYEARTOTAL01 MHYEARTOTAL02 MHYEARTOTAL03 MHYEARTOTAL04 gender age
+
+gen counter = _n
+order counter 
+
+reshape long MHYEARTOTAL0, i(counter) j(year)  
+tsset counter year
+drop if year == 5
+
+gen MHYEARTOTALX = L.MHYEARTOTAL0
+
+bysort counter: gen counter1 = _n
+keep if (counter1 ==2 | counter1 ==3)
+drop counter year counter1
+order famid Individual MHYEARTOTAL0 MHYEARTOTALX 
+
+*****Given data cuts that already occurred, this last part ensures that cost model estimation is done 
+*****using data from year t(-1) to t(2) as is used in the primary specification described in the main text
+*****To protect identity of firm I don't use actual years that the data correspond to in this code
+
+
+
+*****************************************************************************************************************
+*****************************************************************************************************************
+************ First cell for mental health: people with 0 mental health expenditures in the past year ************
+*****************************************************************************************************************
+*****************************************************************************************************************
+
+gen CELL = (MHYEARTOTALX ==0)
+gen CELLZ = (CELL1000 == 1 & MHYEARTOTAL0 <= 0)
+
+******* Estimate discrete probability that someone in this cell has 0 expenditures in the upcoming year
+
+egen ZS = sum(CELLZ)
+egen CT = sum(CELL)
+replace PrZMH = ZS/CT if CELL ==1
+drop ZS CT
+
+******* Estimate Weibull distribution for people in this cell conditional on them having expenditure realization > 0 in upcoming year
+
+pweibull MHYEARTOTAL0 if CELL==1 & MHYEARTOTAL0 >0 
+weibullfit MHYEARTOTAL0 if CELL==1 & MHYEARTOTAL0 >0, bvar(age gender) cvar(age gender)
+
+******* NOTE: here both Weibull shape and scale parameters have an intercept, and depend linearly on age and gender (gender is 1 for male)
+
+mat b = e(b_b)
+mat c = e(b_c)
+
+******* Store estimated parameters in new variables so that we have Weibull distribution (and discrete mass at 0) parameters for simulating 
+******* health risk distributions for the choice model. 
+
+gen MHAgeCoeffb = b[1,1] if CELL == 1
+gen MHGenderCoeffb = b[1,2] if CELL == 1
+gen MHb = b[1,3] if CELL == 1
+
+gen MHAgeCoeffc = c[1,1] if CELL == 1
+gen MHGenderCoeffc = c[1,2] if CELL == 1
+gen MHc = c[1,3] if CELL == 1
+
+drop CELL CELLZ
+
+mat drop b 
+mat drop c 
+
+*****************************************************************************************************************
+*****************************************************************************************************************
+************ First cell for mental health: people with 0 mental health expenditures in the past year ************
+*****************************************************************************************************************
+*****************************************************************************************************************
+
+*** MHYEARTOTALX is lagged expenditures, which is what binning is based on 
+
+gen CELL = (MHYEARTOTALX ==0)
+gen CELLZ = (CELL1000 == 1 & MHYEARTOTAL0 <= 0)
+
+******* Estimate discrete probability that someone in this cell has 0 expenditures in the upcoming year
+
+egen ZS = sum(CELLZ)
+egen CT = sum(CELL)
+replace PrZMH = ZS/CT if CELL ==1
+drop ZS CT
+
+******* Estimate Weibull distribution for people in this cell conditional on them having expenditure realization > 0 in upcoming year
+******* MHYEARTOTAL0 is expenditures in year AFTER MHYEARTOTALX which binning was based on
+******* Weibull distribution is fit with maximum likelihood using EX POST expenditure realizations for everybody in this CELL
+******* Assumption is that ex post distribution of expenditures for those in this cell is ex ante distribution for each individual in cell
+******* See paper and online appendix for additional discussion of these models and assumptions. 
+
+pweibull MHYEARTOTAL0 if CELL==1 & MHYEARTOTAL0 >0 
+weibullfit MHYEARTOTAL0 if CELL==1 & MHYEARTOTAL0 >0, bvar(age gender) cvar(age gender)
+
+******* NOTE: here both Weibull shape and scale parameters have an intercept, and depend linearly on age and gender (gender is 1 for male)
+
+mat b = e(b_b)
+mat c = e(b_c)
+
+******* Store estimated parameters in new variables so that we have Weibull distribution (and discrete mass at 0) parameters for simulating 
+******* health risk distributions for the choice model. 
+
+gen MHAgeCoeffb = b[1,1] if CELL == 1
+gen MHGenderCoeffb = b[1,2] if CELL == 1
+gen MHb = b[1,3] if CELL == 1
+
+gen MHAgeCoeffc = c[1,1] if CELL == 1
+gen MHGenderCoeffc = c[1,2] if CELL == 1
+gen MHc = c[1,3] if CELL == 1
+
+drop CELL CELLZ
+
+mat drop b 
+mat drop c 
+
+
+
+*****************************************************************************************************************
+*****************************************************************************************************************
+************ Second cell for mental health: people between 0 and 500 mental health expenditures past year *******
+*****************************************************************************************************************
+*****************************************************************************************************************
+
+******NOTE: Since estimation is similar for all additional cells / categories of expenditures, I suppress notes. 
+******Refer to first mental health cell above to see notes on what each step in code is doing. 
+
+gen CELL = (MHYEARTOTALX > 0 & MHYEARTOTALX <=500) 
+gen CELLZ = (CELL1000 == 1 & MHYEARTOTAL0 <= 0)
+
+egen ZS = sum(CELLZ)
+egen CT = sum(CELL)
+replace PrZMH = ZS/CT if CELL ==1
+drop ZS CT
+
+pweibull MHYEARTOTAL0 if CELL==1 & MHYEARTOTAL0 >0 
+weibullfit MHYEARTOTAL0 if CELL==1 & MHYEARTOTAL0 >0, bvar(age gender) cvar(age gender)
+
+mat b = e(b_b)
+mat c = e(b_c)
+
+replace MHAgeCoeffb = b[1,1] if CELL == 1
+replace MHGenderCoeffb = b[1,2] if CELL == 1
+replace MHb = b[1,3] if CELL == 1
+
+replace MHAgeCoeffc = c[1,1] if CELL == 1
+replace MHGenderCoeffc = c[1,2] if CELL == 1
+replace MHc = c[1,3] if CELL == 1
+
+drop CELL CELLZ
+
+mat drop b 
+mat drop c 
+
+
+*****************************************************************************************************************
+*****************************************************************************************************************
+************ Thrid cell for mental health: people between 500 and 1000 mental health expenditures past year *****
+*****************************************************************************************************************
+*****************************************************************************************************************
+
+******NOTE: Since estimation is similar for all additional cells / categories of expenditures, I suppress notes. 
+******Refer to first mental health cell above to see notes on what each step in code is doing. 
+
+gen CELL = (MHYEARTOTALX > 500 & MHYEARTOTALX <=1000) 
+gen CELLZ = (CELL1000 == 1 & MHYEARTOTAL0 <= 0)
+
+egen ZS = sum(CELLZ)
+egen CT = sum(CELL)
+replace PrZMH = ZS/CT if CELL ==1
+drop ZS CT
+
+pweibull MHYEARTOTAL0 if CELL==1 & MHYEARTOTAL0 >0 
+weibullfit MHYEARTOTAL0 if CELL==1 & MHYEARTOTAL0 >0, bvar(age gender) cvar(age gender)
+
+mat b = e(b_b)
+mat c = e(b_c)
+
+replace MHAgeCoeffb = b[1,1] if CELL == 1
+replace MHGenderCoeffb = b[1,2] if CELL == 1
+replace MHb = b[1,3] if CELL == 1
+
+replace MHAgeCoeffc = c[1,1] if CELL == 1
+replace MHGenderCoeffc = c[1,2] if CELL == 1
+replace MHc = c[1,3] if CELL == 1
+
+drop CELL CELLZ
+
+mat drop b 
+mat drop c 
+
+
+*****************************************************************************************************************
+*****************************************************************************************************************
+************ Fourth cell for mental health: people between 1000 and 2000 mental health expenditures past year ***
+*****************************************************************************************************************
+*****************************************************************************************************************
+
+******NOTE: Since estimation is similar for all additional cells / categories of expenditures, I suppress notes. 
+******Refer to first mental health cell above to see notes on what each step in code is doing. 
+
+gen CELL = (MHYEARTOTALX > 1000 & MHYEARTOTALX <=2000) 
+gen CELLZ = (CELL1000 == 1 & MHYEARTOTAL0 <= 0)
+
+egen ZS = sum(CELLZ)
+egen CT = sum(CELL)
+replace PrZMH = ZS/CT if CELL ==1
+drop ZS CT
+
+pweibull MHYEARTOTAL0 if CELL==1 & MHYEARTOTAL0 >0 
+weibullfit MHYEARTOTAL0 if CELL==1 & MHYEARTOTAL0 >0, bvar(age gender) cvar(age gender)
+
+mat b = e(b_b)
+mat c = e(b_c)
+
+replace MHAgeCoeffb = b[1,1] if CELL == 1
+replace MHGenderCoeffb = b[1,2] if CELL == 1
+replace MHb = b[1,3] if CELL == 1
+
+replace MHAgeCoeffc = c[1,1] if CELL == 1
+replace MHGenderCoeffc = c[1,2] if CELL == 1
+replace MHc = c[1,3] if CELL == 1
+
+drop CELL CELLZ
+
+mat drop b 
+mat drop c 
+
+
+
+*****************************************************************************************************************
+*****************************************************************************************************************
+************ Fifth cell for mental health: people between 2000 and 3500 mental health expenditures past year ****
+*****************************************************************************************************************
+*****************************************************************************************************************
+
+******NOTE: Since estimation is similar for all additional cells / categories of expenditures, I suppress notes. 
+******Refer to first mental health cell above to see notes on what each step in code is doing. 
+
+gen CELL = (MHYEARTOTALX > 2000 & MHYEARTOTALX <=3500) 
+gen CELLZ = (CELL1000 == 1 & MHYEARTOTAL0 <= 0)
+
+egen ZS = sum(CELLZ)
+egen CT = sum(CELL)
+replace PrZMH = ZS/CT if CELL ==1
+drop ZS CT
+
+pweibull MHYEARTOTAL0 if CELL==1 & MHYEARTOTAL0 >0 
+weibullfit MHYEARTOTAL0 if CELL==1 & MHYEARTOTAL0 >0, bvar(age gender) cvar(age gender)
+
+mat b = e(b_b)
+mat c = e(b_c)
+
+replace MHAgeCoeffb = b[1,1] if CELL == 1
+replace MHGenderCoeffb = b[1,2] if CELL == 1
+replace MHb = b[1,3] if CELL == 1
+
+replace MHAgeCoeffc = c[1,1] if CELL == 1
+replace MHGenderCoeffc = c[1,2] if CELL == 1
+replace MHc = c[1,3] if CELL == 1
+
+drop CELL CELLZ
+
+mat drop b 
+mat drop c 
+
+*****************************************************************************************************************
+*****************************************************************************************************************
+************ Sixth cell for mental health: people between 3500 and 6000 mental health expenditures past year ****
+*****************************************************************************************************************
+*****************************************************************************************************************
+
+******NOTE: Since estimation is similar for all additional cells / categories of expenditures, I suppress notes. 
+******Refer to first mental health cell above to see notes on what each step in code is doing. 
+
+gen CELL = (MHYEARTOTALX > 3500 & MHYEARTOTALX <=6000) 
+gen CELLZ = (CELL1000 == 1 & MHYEARTOTAL0 <= 0)
+
+egen ZS = sum(CELLZ)
+egen CT = sum(CELL)
+replace PrZMH = ZS/CT if CELL ==1
+drop ZS CT
+
+pweibull MHYEARTOTAL0 if CELL==1 & MHYEARTOTAL0 >0 
+weibullfit MHYEARTOTAL0 if CELL==1 & MHYEARTOTAL0 >0, bvar(age gender) cvar(age gender)
+
+mat b = e(b_b)
+mat c = e(b_c)
+
+replace MHAgeCoeffb = b[1,1] if CELL == 1
+replace MHGenderCoeffb = b[1,2] if CELL == 1
+replace MHb = b[1,3] if CELL == 1
+
+replace MHAgeCoeffc = c[1,1] if CELL == 1
+replace MHGenderCoeffc = c[1,2] if CELL == 1
+replace MHc = c[1,3] if CELL == 1
+
+drop CELL CELLZ
+
+mat drop b 
+mat drop c 
+
+*****************************************************************************************************************
+*****************************************************************************************************************
+************ Seventh cell for mental health: people more than 6000 mental health expenditures past year ****
+*****************************************************************************************************************
+*****************************************************************************************************************
+
+******NOTE: Since estimation is similar for all additional cells / categories of expenditures, I suppress notes. 
+******Refer to first mental health cell above to see notes on what each step in code is doing. 
+
+gen CELL = (MHYEARTOTALX > 6000 & MHYEARTOTALX ~=.) 
+gen CELLZ = (CELL1000 == 1 & MHYEARTOTAL0 <= 0)
+
+egen ZS = sum(CELLZ)
+egen CT = sum(CELL)
+replace PrZMH = ZS/CT if CELL ==1
+drop ZS CT
+
+pweibull MHYEARTOTAL0 if CELL==1 & MHYEARTOTAL0 >0 
+weibullfit MHYEARTOTAL0 if CELL==1 & MHYEARTOTAL0 >0, bvar(age gender) cvar(age gender)
+
+mat b = e(b_b)
+mat c = e(b_c)
+
+replace MHAgeCoeffb = b[1,1] if CELL == 1
+replace MHGenderCoeffb = b[1,2] if CELL == 1
+replace MHb = b[1,3] if CELL == 1
+
+replace MHAgeCoeffc = c[1,1] if CELL == 1
+replace MHGenderCoeffc = c[1,2] if CELL == 1
+replace MHc = c[1,3] if CELL == 1
+
+drop CELL CELLZ
+
+mat drop b 
+mat drop c 
+
+*******************************************
+*******************************************
+*******************************************
+************ Now reshape data back to wide (individual row has panel for whole individual) 
+************ and save as PsychWeibull file which will be merged back into final file later
+*******************************************
+*******************************************
+*******************************************
+
+bysort famid Individual: gen counter = _n
+rename counter year
+
+gen X = famid*1000 + Individual
+**** Creates unique ID for each Individual by combining fam / Ind IDs
+
+keep famid Individual PrZMH MHAgeCoeffb MHGenderCoeffb MHb MHAgeCoeffc MHGenderCoeffc MHc year X
+
+reshape wide PrZMH MHAgeCoeffb MHGenderCoeffb MHb MHAgeCoeffc MHGenderCoeffc MHc, i(X) j(year)
+
+drop X 
+order famid Individual
+sort famid Individual 
+
+save "......PsychWeibullMerge.dta", replace
+
+
+
+**********************************************************************************
+**********************************************************************************
+**********************************************************************************
+************** RX / Pharmacy Cost Model Estimation
+************** Use ACG predicted future pharmacy claims index to group similar consumers
+************** (measure calculated prior from detailed claims / NDC codes)
+************** Estimate with next year of expenditures based on prior bin
+**********************************************************************************
+**********************************************************************************
+**********************************************************************************
+
+******************
+****************** Reshaping the data for Pharmacy cost model estimation
+******************
+
+***Start with original dataset with all measures above, all demographics, choices etc.
+restore, preserve
+
+keep famid Individual gender age TOTCR* PharmaC* RXTOTAL1 RXTOTAL2 RXTOTAL3 RXTOTAL4
+
+gen counter = _n
+order counter 
+
+reshape long RXTOTAL PharmaCR_UN0 PharmaCR_SC TOTCRindex_UN TOTCRindex_SC, i(counter) j(year)  
+
+tsset counter year
+
+drop if year == 1
+
+gen RXTOTALX = L.RXTOTAL
+gen PharmaCR_UNX = L.PharmaCR_UN
+gen PharmaCR_SCX = L.PharmaCR_SC
+gen TOTCRindex_UNX = L.TOTCRindex_UN
+gen TOTCRindex_SCX = L.TOTCRindex_SC
+
+bysort counter: gen counter1 = _n
+keep if (counter1 ==2 | counter1 ==3)
+
+drop counter year counter1
+
+order famid Individual RXTOTAL0 RXTOTALX PharmaCR_UNX PharmaCR_UN PharmaCR_SCX PharmaCR_SC TOTCRindex_UNX TOTCRindex_UN TOTCRindex_SCX TOTCRindex_SC
+
+*************************************************************
+*************************************************************
+*************************************************************
+********Keep sclaed and unscaled ACG indexes. Scaled normalizes mean expenditures in population to 1, unscaled
+********normalized relative to large baseline population in ACG program where mean of that population is 1.
+********This normalization holds for both Pharmacy and All Claims predictive ACG measures. Here, we use scaled 
+******** model in estimation though decision is inconsequential (since we're using to group consumers into cells anyway) 
+*************************************************************
+*************************************************************
+*************************************************************
+
+********** Entire RX estimation and subsequent sections similar to other categories. See first Mental Health Cell for discussion of 
+********** what each part of code does. 
+
+*********************************************************************************************************************************
+*********************************************************************************************************************************
+************ First cell for RX/Pharmacy: people with mean pred. future utilization between 0 and .15 of population predicted mean *****
+*********************************************************************************************************************************
+*********************************************************************************************************************************
+
+gen CELL = (PharmaCR_SCX >= 0 & PharmaCR_SCX <= .15)
+
+gen CELLZ = (CELL == 1 & RXTOTAL <= 0)
+egen ZS = sum(CELL)
+egen CT = sum(CELL)
+replace PrZRX = ZS/CT if CELL ==1
+
+drop ZS CT
+
+*****RXTOTAL: Total RX expenditures in the year after binning variable groups someone into cell
+
+pweibull RXTOTAL if CELL ==1 & RXTOTAL >0
+weibullfit RXTOTAL if CELL==1 & RXTOTAL >0, bvar(age gender) cvar(age gender)
+
+mat b = e(b_b)
+mat c = e(b_c)
+
+gen RXAgeCoeffb = b[1,1] if CELL == 1
+gen RXGenderCoeffb = b[1,2] if CELL == 1
+gen RXb = b[1,3] if CELL == 1
+
+gen RXAgeCoeffc = c[1,1] if CELL == 1
+gen RXGenderCoeffc = c[1,2] if CELL == 1
+gen RXc = c[1,3] if CELL == 1
+
+drop CELL CELLZ
+
+mat drop b 
+mat drop c
+
+
+*********************************************************************************************************************************
+*********************************************************************************************************************************
+************ 2nd cell for RX/Pharmacy: people with mean pred. future utilization between .15 and .30 of population predicted mean *****
+*********************************************************************************************************************************
+*********************************************************************************************************************************
+
+gen CELL = (PharmaCR_SCX > .15 & PharmaCR_SCX <= .30)
+
+gen CELLZ = (CELL == 1 & RXTOTAL <= 0)
+egen ZS = sum(CELL)
+egen CT = sum(CELL)
+replace PrZRX = ZS/CT if CELL ==1
+
+drop ZS CT
+
+pweibull RXTOTAL if CELL ==1 & RXTOTAL >0
+weibullfit RXTOTAL if CELL==1 & RXTOTAL >0, bvar(age gender) cvar(age gender)
+
+mat b = e(b_b)
+mat c = e(b_c)
+
+replace RXAgeCoeffb = b[1,1] if CELL == 1
+replace RXGenderCoeffb = b[1,2] if CELL == 1
+replace RXb = b[1,3] if CELL == 1
+
+replace RXAgeCoeffc = c[1,1] if CELL == 1
+replace RXGenderCoeffc = c[1,2] if CELL == 1
+replace RXc = c[1,3] if CELL == 1
+
+drop CELL CELLZ
+
+mat drop b 
+mat drop c
+
+
+*********************************************************************************************************************************
+*********************************************************************************************************************************
+************ 3rd cell for RX/Pharmacy: people with mean pred. future utilization between .3 and .65 of population predicted mean ******
+*********************************************************************************************************************************
+*********************************************************************************************************************************
+
+gen CELL = (PharmaCR_SCX > .3 & PharmaCR_SCX <= .65)
+
+gen CELLZ = (CELL == 1 & RXTOTAL <= 0)
+egen ZS = sum(CELL)
+egen CT = sum(CELL)
+replace PrZRX = ZS/CT if CELL ==1
+
+drop ZS CT
+
+pweibull RXTOTAL if CELL ==1 & RXTOTAL >0
+weibullfit RXTOTAL if CELL==1 & RXTOTAL >0, bvar(age gender) cvar(age gender)
+
+mat b = e(b_b)
+mat c = e(b_c)
+
+replace RXAgeCoeffb = b[1,1] if CELL == 1
+replace RXGenderCoeffb = b[1,2] if CELL == 1
+replace RXb = b[1,3] if CELL == 1
+
+replace RXAgeCoeffc = c[1,1] if CELL == 1
+replace RXGenderCoeffc = c[1,2] if CELL == 1
+replace RXc = c[1,3] if CELL == 1
+
+drop CELL CELLZ
+
+mat drop b 
+mat drop c
+
+
+*********************************************************************************************************************************
+*********************************************************************************************************************************
+************ 4th cell for RX/Pharmacy: people with mean pred. future utilization between .65 and 1 of population predicted mean *****
+*********************************************************************************************************************************
+*********************************************************************************************************************************
+
+gen CELL = (PharmaCR_SCX > .65 & PharmaCR_SCX <= 1)
+
+gen CELLZ = (CELL == 1 & RXTOTAL <= 0)
+egen ZS = sum(CELL)
+egen CT = sum(CELL)
+replace PrZRX = ZS/CT if CELL ==1
+
+drop ZS CT
+
+pweibull RXTOTAL if CELL ==1 & RXTOTAL >0
+weibullfit RXTOTAL if CELL==1 & RXTOTAL >0, bvar(age gender) cvar(age gender)
+
+mat b = e(b_b)
+mat c = e(b_c)
+
+replace RXAgeCoeffb = b[1,1] if CELL == 1
+replace RXGenderCoeffb = b[1,2] if CELL == 1
+replace RXb = b[1,3] if CELL == 1
+
+replace RXAgeCoeffc = c[1,1] if CELL == 1
+replace RXGenderCoeffc = c[1,2] if CELL == 1
+replace RXc = c[1,3] if CELL == 1
+
+drop CELL CELLZ
+
+mat drop b 
+mat drop c
+
+*********************************************************************************************************************************
+*********************************************************************************************************************************
+************ 5th cell for RX/Pharmacy: people with mean pred. future utilization between 1 and 2 times population predicted mean *****
+*********************************************************************************************************************************
+*********************************************************************************************************************************
+
+gen CELL = (PharmaCR_SCX > 1 & PharmaCR_SCX <= 2)
+
+gen CELLZ = (CELL == 1 & RXTOTAL <= 0)
+egen ZS = sum(CELL)
+egen CT = sum(CELL)
+replace PrZRX = ZS/CT if CELL ==1
+
+drop ZS CT
+
+pweibull RXTOTAL if CELL ==1 & RXTOTAL >0
+weibullfit RXTOTAL if CELL==1 & RXTOTAL >0, bvar(age gender) cvar(age gender)
+
+mat b = e(b_b)
+mat c = e(b_c)
+
+replace RXAgeCoeffb = b[1,1] if CELL == 1
+replace RXGenderCoeffb = b[1,2] if CELL == 1
+replace RXb = b[1,3] if CELL == 1
+
+replace RXAgeCoeffc = c[1,1] if CELL == 1
+replace RXGenderCoeffc = c[1,2] if CELL == 1
+replace RXc = c[1,3] if CELL == 1
+
+drop CELL CELLZ
+
+mat drop b 
+mat drop c
+
+*********************************************************************************************************************************
+*********************************************************************************************************************************
+************ 6th cell for RX/Pharmacy: people with mean pred. future utilization between 2 and 5 times population predicted mean *****
+*********************************************************************************************************************************
+*********************************************************************************************************************************
+
+gen CELL = (PharmaCR_SCX > 2 & PharmaCR_SCX <= 5)
+
+gen CELLZ = (CELL == 1 & RXTOTAL <= 0)
+egen ZS = sum(CELL)
+egen CT = sum(CELL)
+replace PrZRX = ZS/CT if CELL ==1
+
+drop ZS CT
+
+pweibull RXTOTAL if CELL ==1 & RXTOTAL >0
+weibullfit RXTOTAL if CELL==1 & RXTOTAL >0, bvar(age gender) cvar(age gender)
+
+mat b = e(b_b)
+mat c = e(b_c)
+
+replace RXAgeCoeffb = b[1,1] if CELL == 1
+replace RXGenderCoeffb = b[1,2] if CELL == 1
+replace RXb = b[1,3] if CELL == 1
+
+replace RXAgeCoeffc = c[1,1] if CELL == 1
+replace RXGenderCoeffc = c[1,2] if CELL == 1
+replace RXc = c[1,3] if CELL == 1
+
+drop CELL CELLZ
+
+mat drop b 
+mat drop c
+
+*********************************************************************************************************************************
+*********************************************************************************************************************************
+************ 7th cell for RX/Pharmacy: people with mean pred. future utilization between 5 and 10 times population predicted mean *****
+*********************************************************************************************************************************
+*********************************************************************************************************************************
+
+gen CELL = (PharmaCR_SCX > 5 & PharmaCR_SCX <= 10)
+
+gen CELLZ = (CELL == 1 & RXTOTAL <= 0)
+egen ZS = sum(CELL)
+egen CT = sum(CELL)
+replace PrZRX = ZS/CT if CELL ==1
+
+drop ZS CT
+
+pweibull RXTOTAL if CELL ==1 & RXTOTAL >0
+weibullfit RXTOTAL if CELL==1 & RXTOTAL >0, bvar(age gender) cvar(age gender)
+
+mat b = e(b_b)
+mat c = e(b_c)
+
+replace RXAgeCoeffb = b[1,1] if CELL == 1
+replace RXGenderCoeffb = b[1,2] if CELL == 1
+replace RXb = b[1,3] if CELL == 1
+
+replace RXAgeCoeffc = c[1,1] if CELL == 1
+replace RXGenderCoeffc = c[1,2] if CELL == 1
+replace RXc = c[1,3] if CELL == 1
+
+drop CELL CELLZ
+
+mat drop b 
+mat drop c
+
+*********************************************************************************************************************************
+*********************************************************************************************************************************
+************ 8th cell for RX/Pharmacy: people with pred. mean future utilization above 10 times population predicted mean *****
+*********************************************************************************************************************************
+*********************************************************************************************************************************
+
+gen CELL = (PharmaCR_SCX > 10 & PharmaCR_SCX ~=.)
+
+gen CELLZ = (CELL == 1 & RXTOTAL <= 0)
+egen ZS = sum(CELL)
+egen CT = sum(CELL)
+replace PrZRX = ZS/CT if CELL ==1
+
+drop ZS CT
+
+pweibull RXTOTAL if CELL ==1 & RXTOTAL >0
+weibullfit RXTOTAL if CELL==1 & RXTOTAL >0, bvar(age gender) cvar(age gender)
+
+mat b = e(b_b)
+mat c = e(b_c)
+
+replace RXAgeCoeffb = b[1,1] if CELL == 1
+replace RXGenderCoeffb = b[1,2] if CELL == 1
+replace RXb = b[1,3] if CELL == 1
+
+replace RXAgeCoeffc = c[1,1] if CELL == 1
+replace RXGenderCoeffc = c[1,2] if CELL == 1
+replace RXc = c[1,3] if CELL == 1
+
+drop CELL CELLZ
+
+mat drop b 
+mat drop c
+
+bysort famid Individual: gen counter = _n
+rename counter year 
+
+gen X = famid*1000 + Individual
+
+keep  PrZRX RXAgeCoeffb RXGenderCoeffb RXb RXAgeCoeffc RXGenderCoeffc RXc year X famid Individual
+
+reshape wide PrZRX RXAgeCoeffb RXGenderCoeffb RXb RXAgeCoeffc RXGenderCoeffc RXc, i(X) j(year)
+
+drop X 
+order famid Individual
+sort famid Individual 
+
+save ".........RXWeibullMerge.dta", replace
+
+
+
+
+**********************************************************************************
+**********************************************************************************
+**********************************************************************************
+************** Hospital / all Other Cost Model Estimation
+************** Use ACG predicted future total expenses index to group similar consumers
+************** (measure calculated prior from detailed claims / NDC codes)
+************** Estimate with next year of expenditures based on prior bin
+**********************************************************************************
+**********************************************************************************
+**********************************************************************************
+
+********
+******** NOTE: This category has a lot of hospital expenditures but is also used 
+******** as a remainder category that includes all medical expenditures not  
+*******  in other three categories
+********
+
+******************
+****************** Reshaping the data for Pharmacy cost model estimation
+******************
+
+restore, preserve
+
+gen HTOTAL1 = YEARTOTAL1 - MHYEARTOTAL1 - RXTOTAL1 - OVTOTAL1 
+gen HTOTAL2 = YEARTOTAL2 - MHYEARTOTAL2 - RXTOTAL2 - OVTOTAL2
+gen HTOTAL3 = YEARTOTAL3 - MHYEARTOTAL3 - RXTOTAL3 - OVTOTAL3 
+gen HTOTAL4 = YEARTOTAL4 - MHYEARTOTAL4 - RXTOTAL4 - OVTOTAL4 
+
+keep famid Individual gender age TOTCR* HTOTAL1 HTOTAL2 HTOTAL3 HTOTAL4
+
+gen counter = _n
+order counter 
+
+reshape long HTOTAL0 TOTCRindex_UN TOTCRindex_SC, i(counter) j(year)  
+
+tsset counter year
+
+drop if year == 1
+
+gen HTOTALX = L.HTOTAL
+gen TOTCRindex_UNX = L.TOTCRindex_UN
+gen TOTCRindex_SCX = L.TOTCRindex_SC
+
+bysort counter: gen counter1 = _n
+keep if (counter1 ==2 | counter1 ==3)
+
+drop counter year counter1
+
+order famid Individual HTOTAL HTOTALX TOTCRindex_UNX TOTCRindex_UN TOTCRindex_SCX TOTCRindex_SC
+
+****************************************************************************************************************************************
+*****************************************************************************************************************************************
+************ 1st cell for Hosp/Other: people with mean pred. future utilization between 0 and .15 of population predicted mean ********
+*****************************************************************************************************************************************
+*****************************************************************************************************************************************
+
+gen CELL = (TOTCRindex_SCX>=0 & TOTCRindex_SCX<=.15)
+gen CELLZ = (CELL == 1 & HTOTAL <= 0)
+
+******* this category has cell to catch very high expenditures to help fit Weibull better below these high values (from high hospital)
+
+gen CELLH = (CELL ==1 & HTOTAL >=40000 & HTOTAL~=.)
+
+egen ZS = sum(CELLZ)
+egen CT = sum(CELL)
+egen HS = sum(CELLH)
+
+gen PrZHP = ZS/CT if CELL ==1
+gen PrHHP = HS/CT if CELL ==1
+
+drop ZS CT HS
+
+pweibull HTOTAL if CELL ==1 & HTOTAL > 0 & HTOTAL <=40000
+weibullfit HTOTAL if CELL==1 & HTOTAL >0 & HTOTAL < 40000
+
+mat b = e(b_b)
+mat c = e(b_c)
+
+gen Hb = b[1,1] if CELL == 1
+gen Hc = c[1,1] if CELL == 1
+
+drop CELL CELLZ CELLH
+
+mat drop b
+mat drop c  
+
+****************************************************************************************************************************************
+*****************************************************************************************************************************************
+************ 2nd cell for Hosp/Other: people with mean pred. future utilization between .15 and .4 of population predicted mean ********
+*****************************************************************************************************************************************
+*****************************************************************************************************************************************
+
+gen CELL = (TOTCRindex_SCX>.15 & TOTCRindex_SCX<=.4)
+gen CELLZ = (CELL == 1 & HTOTAL <= 0)
+gen CELLH = (CELL ==1 & HTOTAL >=40000 & HTOTAL~=.)
+
+egen ZS = sum(CELLZ)
+egen CT = sum(CELL)
+egen HS = sum(CELLH)
+
+gen PrZHP = ZS/CT if CELL ==1
+gen PrHHP = HS/CT if CELL ==1
+
+drop ZS CT HS
+
+pweibull HTOTAL if CELL ==1 & HTOTAL > 0 & HTOTAL <=40000
+weibullfit HTOTAL if CELL==1 & HTOTAL >0 & HTOTAL < 40000
+
+mat b = e(b_b)
+mat c = e(b_c)
+
+replace Hb = b[1,1] if CELL == 1
+replace Hc = c[1,1] if CELL == 1
+
+drop CELL CELLZ CELLH
+
+mat drop b
+mat drop c  
+
+****************************************************************************************************************************************
+*****************************************************************************************************************************************
+************ 3rd cell for Hosp/Other: people with mean pred. future utilization between .4 and .8 of population predicted mean ********
+*****************************************************************************************************************************************
+*****************************************************************************************************************************************
+
+gen CELL = (TOTCRindex_SCX>.4 & TOTCRindex_SCX<=.8)
+gen CELLZ = (CELL == 1 & HTOTAL <= 0)
+gen CELLH = (CELL ==1 & HTOTAL >=40000 & HTOTAL~=.)
+
+egen ZS = sum(CELLZ)
+egen CT = sum(CELL)
+egen HS = sum(CELLH)
+
+gen PrZHP = ZS/CT if CELL ==1
+gen PrHHP = HS/CT if CELL ==1
+
+drop ZS CT HS
+
+pweibull HTOTAL if CELL ==1 & HTOTAL > 0 & HTOTAL <=40000
+weibullfit HTOTAL if CELL==1 & HTOTAL >0 & HTOTAL < 40000
+
+mat b = e(b_b)
+mat c = e(b_c)
+
+replace Hb = b[1,1] if CELL == 1
+replace Hc = c[1,1] if CELL == 1
+
+drop CELL CELLZ CELLH
+
+mat drop b
+mat drop c  
+
+****************************************************************************************************************************************
+*****************************************************************************************************************************************
+************ 4th cell for Hosp/Other: people with mean pred. future utilization between .8 and 1.3 of population predicted mean ********
+*****************************************************************************************************************************************
+*****************************************************************************************************************************************
+
+gen CELL = (TOTCRindex_SCX>.8 & TOTCRindex_SCX<=1.3)
+gen CELLZ = (CELL == 1 & HTOTAL <= 0)
+gen CELLH = (CELL ==1 & HTOTAL >=40000 & HTOTAL~=.)
+
+egen ZS = sum(CELLZ)
+egen CT = sum(CELL)
+egen HS = sum(CELLH)
+
+gen PrZHP = ZS/CT if CELL ==1
+gen PrHHP = HS/CT if CELL ==1
+
+drop ZS CT HS
+
+pweibull HTOTAL if CELL ==1 & HTOTAL > 0 & HTOTAL <=40000
+weibullfit HTOTAL if CELL==1 & HTOTAL >0 & HTOTAL < 40000
+
+mat b = e(b_b)
+mat c = e(b_c)
+
+replace Hb = b[1,1] if CELL == 1
+replace Hc = c[1,1] if CELL == 1
+
+drop CELL CELLZ CELLH
+
+mat drop b
+mat drop c  
+
+****************************************************************************************************************************************
+*****************************************************************************************************************************************
+************ 5th cell for Hosp/Other: people with mean pred. future utilization between 1.3 and 2 of population predicted mean ********
+*****************************************************************************************************************************************
+*****************************************************************************************************************************************
+
+gen CELL = (TOTCRindex_SCX>1.3 & TOTCRindex_SCX<=2)
+gen CELLZ = (CELL == 1 & HTOTAL <= 0)
+gen CELLH = (CELL ==1 & HTOTAL >=40000 & HTOTAL~=.)
+
+egen ZS = sum(CELLZ)
+egen CT = sum(CELL)
+egen HS = sum(CELLH)
+
+gen PrZHP = ZS/CT if CELL ==1
+gen PrHHP = HS/CT if CELL ==1
+
+drop ZS CT HS
+
+pweibull HTOTAL if CELL ==1 & HTOTAL > 0 & HTOTAL <=40000
+weibullfit HTOTAL if CELL==1 & HTOTAL >0 & HTOTAL < 40000
+
+mat b = e(b_b)
+mat c = e(b_c)
+
+replace Hb = b[1,1] if CELL == 1
+replace Hc = c[1,1] if CELL == 1
+
+drop CELL CELLZ CELLH
+
+mat drop b
+mat drop c  
+
+****************************************************************************************************************************************
+*****************************************************************************************************************************************
+************ 6th cell for Hosp/Other: people with mean pred. future utilization between 2 and 4 of population predicted mean ********
+*****************************************************************************************************************************************
+*****************************************************************************************************************************************
+
+gen CELL = (TOTCRindex_SCX>2 & TOTCRindex_SCX<=4)
+gen CELLZ = (CELL == 1 & HTOTAL <= 0)
+gen CELLH = (CELL ==1 & HTOTAL >=40000 & HTOTAL~=.)
+
+egen ZS = sum(CELLZ)
+egen CT = sum(CELL)
+egen HS = sum(CELLH)
+
+gen PrZHP = ZS/CT if CELL ==1
+gen PrHHP = HS/CT if CELL ==1
+
+drop ZS CT HS
+
+pweibull HTOTAL if CELL ==1 & HTOTAL > 0 & HTOTAL <=40000
+weibullfit HTOTAL if CELL==1 & HTOTAL >0 & HTOTAL < 40000
+
+mat b = e(b_b)
+mat c = e(b_c)
+
+replace Hb = b[1,1] if CELL == 1
+replace Hc = c[1,1] if CELL == 1
+
+drop CELL CELLZ CELLH
+
+mat drop b
+mat drop c  
+
+****************************************************************************************************************************************
+*****************************************************************************************************************************************
+************ 7th cell for Hosp/Other: people with mean pred. future utilization between 4 and 7 of population predicted mean ********
+*****************************************************************************************************************************************
+*****************************************************************************************************************************************
+
+gen CELL = (TOTCRindex_SCX>4 & TOTCRindex_SCX<=7)
+gen CELLZ = (CELL == 1 & HTOTAL <= 0)
+gen CELLH = (CELL ==1 & HTOTAL >=40000 & HTOTAL~=.)
+
+egen ZS = sum(CELLZ)
+egen CT = sum(CELL)
+egen HS = sum(CELLH)
+
+gen PrZHP = ZS/CT if CELL ==1
+gen PrHHP = HS/CT if CELL ==1
+
+drop ZS CT HS
+
+pweibull HTOTAL if CELL ==1 & HTOTAL > 0 & HTOTAL <=40000
+weibullfit HTOTAL if CELL==1 & HTOTAL >0 & HTOTAL < 40000
+
+mat b = e(b_b)
+mat c = e(b_c)
+
+replace Hb = b[1,1] if CELL == 1
+replace Hc = c[1,1] if CELL == 1
+
+drop CELL CELLZ CELLH
+
+mat drop b
+mat drop c 
+
+****************************************************************************************************************************************
+*****************************************************************************************************************************************
+************ 8th cell for Hosp/Other: people with mean pred. future utilization greater than 7X population predicted mean ********
+*****************************************************************************************************************************************
+*****************************************************************************************************************************************
+
+gen CELL = (TOTCRindex_SCX>7 & TOTCRindex_SCX~=.)
+gen CELLZ = (CELL == 1 & HTOTAL <= 0)
+gen CELLH = (CELL ==1 & HTOTAL >=40000 & HTOTAL~=.)
+
+egen ZS = sum(CELLZ)
+egen CT = sum(CELL)
+egen HS = sum(CELLH)
+
+gen PrZHP = ZS/CT if CELL ==1
+gen PrHHP = HS/CT if CELL ==1
+
+drop ZS CT HS
+
+pweibull HTOTAL if CELL ==1 & HTOTAL > 0 & HTOTAL <=40000
+weibullfit HTOTAL if CELL==1 & HTOTAL >0 & HTOTAL < 40000
+
+mat b = e(b_b)
+mat c = e(b_c)
+
+replace Hb = b[1,1] if CELL == 1
+replace Hc = c[1,1] if CELL == 1
+
+drop CELL CELLZ CELLH
+
+mat drop b
+mat drop c 
+
+**********Reshape wide to get file into form to merge back into main wide file
+
+bysort famid Individual: gen counter = _n
+rename counter year 
+
+gen X = famid*1000 + Individual
+
+keep famid Individual PrZHP PrHHP Hb Hc year X
+
+reshape wide PrZHP PrHHP Hb Hc, i(X) j(year)
+
+drop X 
+order famid Individual
+sort famid Individual 
+
+save "..............HospWeibullMerge.dta", replace
+
+
+
+
+
+**********************************************************************************
+**********************************************************************************
+**********************************************************************************
+************** Physician Office Visit Cost Model Estimation **********************
+************** Use ACG predicted future total expenses index to group similar consumers
+************** (measure calculated prior from detailed claims / NDC codes)
+************** Estimate with next year of expenditures based on prior bin
+**********************************************************************************
+**********************************************************************************
+**********************************************************************************
+
+******************
+****************** Reshaping the data for Pharmacy cost model estimation
+******************
+
+restore, preserve
+
+keep famid Individual gender age TOTCR* OVTOTAL1 OVTOTAL2 OVTOTAL3 OVTOTAL4
+
+gen counter = _n
+order counter 
+
+reshape long OVTOTAL TOTCRindex_UN TOTCRindex_SC, i(counter) j(year)  
+
+tsset counter year
+
+drop if year == 1
+
+gen OVTOTALX = L.OVTOTAL
+gen TOTCRindex_UNX = L.TOTCRindex_UN
+gen TOTCRindex_SCX = L.TOTCRindex_SC
+
+bysort counter: gen counter1 = _n
+keep if (counter1 ==2 | counter1 ==3)
+
+drop counter year counter1
+
+order famid Individual OVTOTAL OVTOTALX TOTCRindex_UNX TOTCRindex_UN TOTCRindex_SCX TOTCRindex_SC
+
+****************************************************************************************************************************************
+*****************************************************************************************************************************************
+************ 1st cell for Office Visit: people with mean pred. future utilization between 0 and .5 population predicted mean ********
+*****************************************************************************************************************************************
+*****************************************************************************************************************************************
+
+*****NOTE: Office Visit cells are larger because expenses are lower and fluctuate much less than Hospital / all Other, which uses
+*****the same category above for grouping
+
+gen CELL = (TOTCRindex_SCX>=0 & TOTCRindex_SCX<=.5)
+
+gen CELLZ = (CELL == 1 & OVTOTAL <= 0)
+egen ZS = sum(CELLZ)
+egen CT = sum(CELL)
+gen PrZOV = ZS/CT if CELL ==1
+drop ZS CT
+
+pweibull OVTOTAL if CELL ==1 & OVTOTAL > 0 
+weibullfit OVTOTAL if CELL==1 & OVTOTAL > 0 
+
+mat b = e(b_b)
+mat c = e(b_c)
+
+gen OVb = b[1,1] if CELL == 1
+gen OVc = c[1,1] if CELL == 1
+
+drop CELL CELLZ
+
+mat drop b
+mat drop c  
+
+****************************************************************************************************************************************
+*****************************************************************************************************************************************
+************ 2nd cell for Office Visit: people with mean pred. future utilization between .5 and 1 population predicted mean ********
+*****************************************************************************************************************************************
+*****************************************************************************************************************************************
+
+gen CELL = (TOTCRindex_SCX>.5 & TOTCRindex_SCX<=1)
+
+gen CELLZ = (CELL == 1 & OVTOTAL <= 0)
+egen ZS = sum(CELLZ)
+egen CT = sum(CELL)
+gen PrZOV = ZS/CT if CELL ==1
+drop ZS CT
+
+pweibull OVTOTAL if CELL ==1 & OVTOTAL > 0 
+weibullfit OVTOTAL if CELL==1 & OVTOTAL > 0 
+
+mat b = e(b_b)
+mat c = e(b_c)
+
+replace OVb = b[1,1] if CELL == 1
+replace OVc = c[1,1] if CELL == 1
+
+drop CELL CELLZ
+
+mat drop b
+mat drop c  
+
+****************************************************************************************************************************************
+*****************************************************************************************************************************************
+************ 3rd cell for Office Visit: people with mean pred. future utilization between 1 and 1.5 population predicted mean ********
+*****************************************************************************************************************************************
+*****************************************************************************************************************************************
+
+gen CELL = (TOTCRindex_SCX>1 & TOTCRindex_SCX<=1.5)
+
+gen CELLZ = (CELL == 1 & OVTOTAL <= 0)
+egen ZS = sum(CELLZ)
+egen CT = sum(CELL)
+gen PrZOV = ZS/CT if CELL ==1
+drop ZS CT
+
+pweibull OVTOTAL if CELL ==1 & OVTOTAL > 0 
+weibullfit OVTOTAL if CELL==1 & OVTOTAL > 0 
+
+mat b = e(b_b)
+mat c = e(b_c)
+
+replace OVb = b[1,1] if CELL == 1
+replace OVc = c[1,1] if CELL == 1
+
+drop CELL CELLZ
+
+mat drop b
+mat drop c  
+
+****************************************************************************************************************************************
+*****************************************************************************************************************************************
+************ 4th cell for Office Visit: people with mean pred. future utilization between 1.5 and 3 population predicted mean ********
+*****************************************************************************************************************************************
+*****************************************************************************************************************************************
+
+gen CELL = (TOTCRindex_SCX>1.5 & TOTCRindex_SCX<=3)
+
+gen CELLZ = (CELL == 1 & OVTOTAL <= 0)
+egen ZS = sum(CELLZ)
+egen CT = sum(CELL)
+gen PrZOV = ZS/CT if CELL ==1
+drop ZS CT
+
+pweibull OVTOTAL if CELL ==1 & OVTOTAL > 0 
+weibullfit OVTOTAL if CELL==1 & OVTOTAL > 0 
+
+mat b = e(b_b)
+mat c = e(b_c)
+
+replace OVb = b[1,1] if CELL == 1
+replace OVc = c[1,1] if CELL == 1
+
+drop CELL CELLZ
+
+mat drop b
+mat drop c  
+
+****************************************************************************************************************************************
+*****************************************************************************************************************************************
+************ 5th cell for Office Visit: people with mean pred. future utilization between 3 and 5 population predicted mean ********
+*****************************************************************************************************************************************
+*****************************************************************************************************************************************
+
+gen CELL = (TOTCRindex_SCX>3 & TOTCRindex_SCX<=5)
+
+gen CELLZ = (CELL == 1 & OVTOTAL <= 0)
+egen ZS = sum(CELLZ)
+egen CT = sum(CELL)
+gen PrZOV = ZS/CT if CELL ==1
+drop ZS CT
+
+pweibull OVTOTAL if CELL ==1 & OVTOTAL > 0 
+weibullfit OVTOTAL if CELL==1 & OVTOTAL > 0 
+
+mat b = e(b_b)
+mat c = e(b_c)
+
+replace OVb = b[1,1] if CELL == 1
+replace OVc = c[1,1] if CELL == 1
+
+drop CELL CELLZ
+
+mat drop b
+mat drop c  
+
+****************************************************************************************************************************************
+*****************************************************************************************************************************************
+************ 6th cell for Office Visit: people with mean pred. future utilization greater than 5 population predicted mean ********
+*****************************************************************************************************************************************
+*****************************************************************************************************************************************
+
+gen CELL = (TOTCRindex_SCX>5 & TOTCRindex_SCX~=.)
+
+gen CELLZ = (CELL == 1 & OVTOTAL <= 0)
+egen ZS = sum(CELLZ)
+egen CT = sum(CELL)
+gen PrZOV = ZS/CT if CELL ==1
+drop ZS CT
+
+pweibull OVTOTAL if CELL ==1 & OVTOTAL > 0 
+weibullfit OVTOTAL if CELL==1 & OVTOTAL > 0 
+
+mat b = e(b_b)
+mat c = e(b_c)
+
+replace OVb = b[1,1] if CELL == 1
+replace OVc = c[1,1] if CELL == 1
+
+drop CELL CELLZ
+
+mat drop b
+mat drop c  
+
+**************Reshape wide to merge back in with main wide data file
+
+bysort famid Individual: gen counter = _n
+rename counter year 
+
+gen X = famid*1000 + Individual
+
+keep  famid Individual PrZOV OVb OVc year X
+
+reshape wide PrZOV OVb OVc, i(X) j(year)
+
+drop X 
+order famid Individual
+sort famid Individual 
+
+save ".............OVWeibullMerge.dta", replace
+
+**************************************************************************************************
+**************************************************************************************************
+**************************************************************************************************
+**************************************************************************************************
+***************** Merge all Cost Model Estimate Files for each category  *************************
+***************** Into Main File                                         *************************
+************************************************************************************************** 
+                                              
+restore
+
+clear 
+
+use ".........PrimaryData.dta", clear
+
+sort famid Individual
+
+merge famid Individual using "........OVWeibullMerge.dta"
+drop _merge
+
+sort famid Individual
+
+merge famid Individual using "........RXWeibullMerge.dta"
+drop _merge
+
+sort famid Individual
+
+merge famid Individual using ".......HospWeibullMerge.dta"
+drop _merge
+
+sort famid Individual
+
+merge famid Individual using "......PsychWeibullMerge.dta"
+drop _merge
+
+save ".................Cost Model PRocessing.dta", replace
+
+***************************************************************************
+***************************************************************************
+************ NOTE: Final year in data had family choices but no realized expenditures
+************ However, we could still use predictive health measures for these people
+************ based on the prior year predictive indices and cost data. The next part 
+************ of the code fills in the appropriate estimated parameters for people 
+************ based on the cost model estimates and their predictive measures 
+************ formed on the final year of claims / cost data
+***************************************************************************
+***************************************************************************
+
+*****Recreate cells based on year of data we observe
+
+gen CELL = (MHYEARTOTAL3 >0 & MHYEARTOTAL3 <= 500)
+replace CELL = 2 if (MHYEARTOTAL3 >=500 & MHYEARTOTAL3 <= 1000)
+replace CELL = 3 if (MHYEARTOTAL3 >=1000 & MHYEARTOTAL3 <= 2000)
+
+replace CELL = 4 if (MHYEARTOTAL3 >=2000 & MHYEARTOTAL3 <= 3500)
+replace CELL = 5 if (MHYEARTOTAL3 >=3500 & MHYEARTOTAL3 <= 6000)
+replace CELL = 6 if (MHYEARTOTAL3 >=6000 & MHYEARTOTAL3 ~= .)
+replace CELL = . if MHYEARTOTAL3==.
+
+preserve
+
+******* Keep estimated parameters as a function of those cells
+
+keep CELL PrZMH4 MHGenderCoeffb4 MHAgeCoeffb4 MHb4 MHAgeCoeffc4 MHGenderCoeffc4 MHc4
+
+bysort CELL: gen counter = _n
+keep if counter ==1
+drop counter
+
+******* Later will be merged in based on year 4 predictive indices
+
+rename PrZMH4 PrZMH5 
+rename MHAgeCoeffb4 MHAgeCoeffb5 
+rename MHGenderCoeffb4 MHGenderCoeffb5 
+rename MHb4 MHb5 
+rename MHAgeCoeffc4 MHAgeCoeffc5 
+rename MHGenderCoeffc4 MHGenderCoeffc5 
+rename MHc4 MHc5
+
+sort CELL
+
+save "...........Psych5M.dta", replace
+
+restore
+
+drop CELL
+
+gen CELL = (MHYEARTOTAL4 >0 & MHYEARTOTAL4 <= 500)
+replace CELL = 2 if (MHYEARTOTAL4 >=500 & MHYEARTOTAL4 <= 1000)
+replace CELL = 3 if (MHYEARTOTAL4 >=1000 & MHYEARTOTAL4 <= 2000)
+
+replace CELL = 4 if (MHYEARTOTAL4 >=2000 & MHYEARTOTAL4 <= 3500)
+replace CELL = 5 if (MHYEARTOTAL4 >=3500 & MHYEARTOTAL4 <= 6000)
+replace CELL = 6 if (MHYEARTOTAL4 >=6000 & MHYEARTOTAL4 ~= .)
+
+sort CELL
+
+merge CELL using "..............Psych5M.dta"
+
+***************************************************************
+******* Now do same for the other 3 categories ****************
+***************************************************************
+ 
+drop CELL
+
+gen CELL = (PharmaCR_SC3 >=.15 & PharmaCR_SC3 <=.3)
+replace CELL = 2 if (PharmaCR_SC3 >=.3 & PharmaCR_SC3 <=.65)
+replace CELL = 3 if (PharmaCR_SC3 >=.65 & PharmaCR_SC3 <=1)
+
+replace CELL = 4 if (PharmaCR_SC3 >=1 & PharmaCR_SC3 <=2)
+replace CELL = 5 if (PharmaCR_SC3 >=2 & PharmaCR_SC3 <=5)
+replace CELL = 6 if (PharmaCR_SC3 >=5 & PharmaCR_SC3<=10)
+replace CELL = 7 if (PharmaCR_SC3 >=10 & PharmaCR_SC3~=.)
+replace CELL = . if PharmaCR_SC3==.
+
+preserve 
+
+keep CELL PrZRX4 RXAgeCoeffb4 RXGenderCoeffb4 RXb4 RXAgeCoeffc4 RXc4 RXGenderCoeffc4
+
+bysort CELL: gen counter = _n
+keep if counter ==1
+drop counter
+
+rename PrZRX4 PrZRX5
+rename RXAgeCoeffb4 RXAgeCoeffb5
+rename RXGenderCoeffb4 RXGenderCoeffb5 
+rename RXb4 RXb5
+rename RXAgeCoeffc4 RXAgeCoeffc5
+rename RXc4 RXc5
+rename RXGenderCoeffc4 RXGenderCoeffc5
+
+sort CELL
+
+save "...................RX5M.dta", replace
+
+restore
+
+drop CELL
+
+gen CELL = (PharmaCR_SC4 >=.15 & PharmaCR_SC4 <=.3)
+replace CELL = 2 if (PharmaCR_SC4 >=.3 & PharmaCR_SC4 <=.65)
+replace CELL = 3 if (PharmaCR_SC4 >=.65 & PharmaCR_SC4 <=1)
+
+replace CELL = 4 if (PharmaCR_SC4 >=1 & PharmaCR_SC4 <=2)
+replace CELL = 5 if (PharmaCR_SC4 >=2 & PharmaCR_SC4 <=5)
+replace CELL = 6 if (PharmaCR_SC4 >=5 & PharmaCR_SC4<=10)
+replace CELL = 7 if (PharmaCR_SC4 >=10 & PharmaCR_SC4~=.)
+replace CELL = . if PharmaCR_SC4==.
+
+sort CELL
+
+drop _merge
+merge CELL using "...........RX5M.dta"
+drop _merge
+
+***********************
+*********************** Hospital Final Year Merge 
+***********************
+
+drop CELL
+
+gen CELL = (TOTCRindex_SC3 >=.15 & TOTCRindex_SC3 <=.4)
+replace CELL = 2 if (TOTCRindex_SC3 >=.4 & TOTCRindex_SC3 <=.8)
+replace CELL = 3 if (TOTCRindex_SC3 >=.8 & TOTCRindex_SC3 <=1.3)
+
+replace CELL = 4 if (TOTCRindex_SC3 >=1.3 & TOTCRindex_SC3 <=2)
+replace CELL = 5 if (TOTCRindex_SC3 >=2 & TOTCRindex_SC3 <=4)
+replace CELL = 6 if (TOTCRindex_SC3 >=4 & TOTCRindex_SC3<=7)
+replace CELL = 7 if (TOTCRindex_SC3 >=7 & TOTCRindex_SC3~=.)
+replace CELL = . if TOTCRindex_SC3==.
+
+preserve 
+
+keep CELL PrZHP4 PrHHP4 Hb4 Hc4
+
+bysort CELL: gen counter = _n
+keep if counter ==1
+drop counter
+
+rename PrZHP4 PrZHP5
+rename PrHHP4 PrHHP5 
+rename Hb4 Hb5 
+rename Hc4 Hc5
+
+sort CELL
+
+save "........................HOSP5M.dta", replace
+
+restore
+
+drop CELL
+
+gen CELL = (TOTCRindex_SC4 >=.15 & TOTCRindex_SC4 <=.4)
+replace CELL = 2 if (TOTCRindex_SC4 >=.4 & TOTCRindex_SC4 <=.8)
+replace CELL = 3 if (TOTCRindex_SC4 >=.8 & TOTCRindex_SC4 <=1.3)
+
+replace CELL = 4 if (TOTCRindex_SC4 >=1.3 & TOTCRindex_SC4 <=2)
+replace CELL = 5 if (TOTCRindex_SC4 >=2 & TOTCRindex_SC4 <=4)
+replace CELL = 6 if (TOTCRindex_SC4 >=4 & TOTCRindex_SC4<=7)
+replace CELL = 7 if (TOTCRindex_SC4 >=7 & TOTCRindex_SC4~=.)
+replace CELL = . if TOTCRindex_SC4==.
+
+sort CELL
+
+merge CELL using "......................HOSP5M.dta"
+drop _merge
+
+drop CELL
+
+***********************
+*********************** Office Visit Final Year Estimation Merge 
+***********************
+
+gen CELL = (TOTCRindex_SC3 >=.5 & TOTCRindex_SC3 <=1)
+replace CELL = 2 if (TOTCRindex_SC3 >=1 & TOTCRindex_SC3 <=1.5)
+replace CELL = 3 if (TOTCRindex_SC3 >=1.5 & TOTCRindex_SC3 <=3)
+
+replace CELL = 4 if (TOTCRindex_SC3 >=3 & TOTCRindex_SC3 <=5)
+replace CELL = 5 if (TOTCRindex_SC3 >=5 & TOTCRindex_SC3 ~=.)
+replace CELL = . if TOTCRindex_SC3==.
+
+preserve 
+
+keep CELL PrZOV4 OVb4 OVc4
+
+bysort CELL: gen counter = _n
+keep if counter ==1
+drop counter
+
+rename PrZOV4 PrZOV5 
+rename OVb4 OVb5 
+rename OVc4 OVc5
+
+sort CELL
+
+save ".....................OV5M.dta", replace
+
+restore
+
+drop CELL
+
+gen CELL = (TOTCRindex_SC4 >=.5 & TOTCRindex_SC4 <=1)
+replace CELL = 2 if (TOTCRindex_SC4 >=1 & TOTCRindex_SC4 <=1.5)
+replace CELL = 3 if (TOTCRindex_SC4 >=1.5 & TOTCRindex_SC4 <=3)
+
+replace CELL = 4 if (TOTCRindex_SC4 >=3 & TOTCRindex_SC4 <=5)
+replace CELL = 5 if (TOTCRindex_SC4 >=5 & TOTCRindex_SC4 ~=.)
+replace CELL = . if TOTCRindex_SC4==.
+
+sort CELL
+
+merge CELL using "..............OV5M.dta"
+drop _merge
+
+drop CELL
+
+save "..............................Cost Model PRocessing2.dta", replace
+
+
+**************************************************************************
+**************************************************************************
+***************** Final part of cost model estimation is to estimte rank 
+***************** correlations between categories of medical expenditures
+*****************  these will be used to combine the marginal distribution
+*****************  estiamtes from this file into a joint Weibull using
+*****************  copula methods. This is done in PART II -the code that 
+***************** simulates joint health risk distirbutions in MATLAB
+**************************************************************************
+**************************************************************************
+**************************************************************************
+**************************************************************************
+**************************************************************************
+**************************************************************************
+
+************************ NOTE: Correlation for Mental Health  
+************************ and other categories assumed 0, because 
+************************ it is close to 0 empirically. See tests below. 
+
+spearman MHYEARTOTAL3 HTOTAL3
+spearman MHYEARTOTAL4 HTOTAL4
+
+spearman RXTOTAL3 MHYEARTOTAL4
+spearman RXTOTAL4 MHYEARTOTAL4
+
+spearman OVTOTAL3 MHYEARTOTAL3
+spearman OVTOTAL4 MHYEARTOTAL4
+
+*********************************************************************************
+*********************************************************************************
+*********** Estimate and Store Rank Correlations Between RX and HOSP Exp.********
+*********************************************************************************
+*********************************************************************************
+
+spearman RXTOTAL3 HTOTAL3
+spearman RXTOTAL4 HTOTAL4
+
+spearman OVTOTAL3 HTOTAL3
+spearman OVTOTAL4 HTOTAL4
+
+spearman OVTOTAL3 RXTOTAL3
+spearman OVTOTAL4 RXTOTAL4
+
+************** Create Correlations by Health Cell and Store them for each person 
+
+preserve
+
+drop if famid==.
+
+drop counter
+gen counter = _n
+order counter 
+
+keep RXTOTAL* HTOTAL* famid Individual counter TOTCRindex_SC*
+reshape long RXTOTAL HTOTAL TOTCRindex_SC, i(counter) j(year)
+
+tsset counter year
+
+gen TOTCRindex_SCX = L.TOTCRindex_SC
+
+drop if year ==1
+
+*****NOTE: Between category correlations are estimated based on 
+***** ACG predicted total resource indicator since this is the most 
+***** general of the predictive measures
+
+gen CELL = (TOTCRindex_SCX >=.15 & TOTCRindex_SCX <=.4)
+replace CELL = 2 if (TOTCRindex_SCX >=.4 & TOTCRindex_SCX <=.8)
+replace CELL = 3 if (TOTCRindex_SCX >=.8 & TOTCRindex_SCX <=1.3)
+
+replace CELL = 4 if (TOTCRindex_SCX >=1.3 & TOTCRindex_SCX <=2)
+replace CELL = 5 if (TOTCRindex_SCX >=2 & TOTCRindex_SCX <=4)
+replace CELL = 6 if (TOTCRindex_SCX >=4 & TOTCRindex_SCX<=7)
+replace CELL = 7 if (TOTCRindex_SCX >=7 & TOTCRindex_SCX~=.)
+replace CELL = . if TOTCRindex_SCX==.
+
+spearman RXTOTAL HTOTAL if CELL == 0
+gen CorrRXH = r(rho) if CELL == 0
+
+spearman RXTOTAL HTOTAL if CELL == 1
+replace CorrRXH = r(rho) if CELL == 1
+
+spearman RXTOTAL HTOTAL if CELL == 2
+replace CorrRXH = r(rho) if CELL == 2
+
+spearman RXTOTAL HTOTAL if CELL == 3
+replace CorrRXH = r(rho) if CELL == 3
+
+spearman RXTOTAL HTOTAL if CELL == 4
+replace CorrRXH = r(rho) if CELL == 4
+
+spearman RXTOTAL HTOTAL if CELL == 5
+replace CorrRXH = r(rho) if CELL == 5
+
+spearman RXTOTAL HTOTAL if CELL == 6
+replace CorrRXH = r(rho) if CELL == 6
+
+spearman RXTOTAL HTOTAL if CELL == 7
+replace CorrRXH = r(rho) if CELL == 7
+
+keep CorrRXH famid Individual counter year
+
+reshape wide CorrRXH, i(counter) j(year)
+
+drop counter CorrRXH2
+
+sort famid Individual
+
+save "..............CorrRX.dta", replace
+
+
+*********************************************************************************
+*********************************************************************************
+*********** Estimate and Store Rank Correlations Between Office Visit and HOSP Exp.********
+*********************************************************************************
+*********************************************************************************
+
+restore, preserve	
+
+spearman HTOTAL3 OVTOTAL3
+spearman HTOTAL4 OVTOTAL4
+
+drop if famid==.
+
+drop counter
+gen counter = _n
+order counter 
+
+keep OVTOTAL* HTOTAL* famid Individual counter TOTCRindex_SC*
+reshape long OVTOTAL HTOTAL TOTCRindex_SC, i(counter) j(year)
+
+tsset counter year
+
+gen TOTCRindex_SCX = L.TOTCRindex_SC
+
+drop if year ==1
+
+gen CELL = (TOTCRindex_SCX >=.15 & TOTCRindex_SCX <=.4)
+replace CELL = 2 if (TOTCRindex_SCX >=.4 & TOTCRindex_SCX <=.8)
+replace CELL = 3 if (TOTCRindex_SCX >=.8 & TOTCRindex_SCX <=1.3)
+
+replace CELL = 4 if (TOTCRindex_SCX >=1.3 & TOTCRindex_SCX <=2)
+replace CELL = 5 if (TOTCRindex_SCX >=2 & TOTCRindex_SCX <=4)
+replace CELL = 6 if (TOTCRindex_SCX >=4 & TOTCRindex_SCX<=7)
+replace CELL = 7 if (TOTCRindex_SCX >=7 & TOTCRindex_SCX~=.)
+replace CELL = . if TOTCRindex_SCX==.
+
+spearman OVTOTAL HTOTAL if CELL == 0
+gen CorrOVH = r(rho) if CELL == 0
+
+spearman OVTOTAL HTOTAL if CELL == 1
+replace CorrOVH = r(rho) if CELL == 1
+
+spearman OVTOTAL HTOTAL if CELL == 2
+replace CorrOVH = r(rho) if CELL == 2
+
+spearman OVTOTAL HTOTAL if CELL == 3
+replace CorrOVH = r(rho) if CELL == 3
+
+spearman OVTOTAL HTOTAL if CELL == 4
+replace CorrOVH = r(rho) if CELL == 4
+
+spearman OVTOTAL HTOTAL if CELL == 5
+replace CorrOVH = r(rho) if CELL == 5
+
+spearman OVTOTAL HTOTAL if CELL == 6
+replace CorrOVH = r(rho) if CELL == 6
+
+spearman OVTOTAL HTOTAL if CELL == 7
+replace CorrOVH = r(rho) if CELL == 7
+
+keep CorrOVH famid Individual counter year
+
+reshape wide CorrOVH, i(counter) j(year)
+
+drop counter CorrOVH2
+
+sort famid Individual
+
+save "....................CorrOV.dta", replace
+
+*********************************************************************************
+*********************************************************************************
+*********** Estimate and Store Rank Correlations Between RX and Off. Vis. Exp.********
+*********************************************************************************
+*********************************************************************************
+
+restore, preserve	
+
+spearman RXTOTAL3 OVTOTAL3
+spearman RXTOTAL4 OVTOTAL4
+
+drop if famid==.
+
+drop counter
+gen counter = _n
+order counter 
+
+keep OVTOTAL* RXTOTAL* famid Individual counter TOTCRindex_SC*
+reshape long OVTOTAL RXTOTAL TOTCRindex_SC, i(counter) j(year)
+
+tsset counter year
+
+gen TOTCRindex_SCX = L.TOTCRindex_SC
+
+drop if year ==1
+
+gen CELL = (TOTCRindex_SCX >=.15 & TOTCRindex_SCX <=.4)
+replace CELL = 2 if (TOTCRindex_SCX >=.4 & TOTCRindex_SCX <=.8)
+replace CELL = 3 if (TOTCRindex_SCX >=.8 & TOTCRindex_SCX <=1.3)
+
+replace CELL = 4 if (TOTCRindex_SCX >=1.3 & TOTCRindex_SCX <=2)
+replace CELL = 5 if (TOTCRindex_SCX >=2 & TOTCRindex_SCX <=4)
+replace CELL = 6 if (TOTCRindex_SCX >=4 & TOTCRindex_SCX<=7)
+replace CELL = 7 if (TOTCRindex_SCX >=7 & TOTCRindex_SCX~=.)
+replace CELL = . if TOTCRindex_SCX==.
+
+spearman OVTOTAL RXTOTAL if CELL == 0
+gen CorrOVRX = r(rho) if CELL == 0
+
+spearman OVTOTAL RXTOTAL if CELL == 1
+replace CorrOVRX = r(rho) if CELL == 1
+
+spearman OVTOTAL RXTOTAL if CELL == 2
+replace CorrOVRX = r(rho) if CELL == 2
+
+
+spearman OVTOTAL RXTOTAL if CELL == 3
+replace CorrOVRX = r(rho) if CELL == 3
+
+
+spearman OVTOTAL RXTOTAL if CELL == 4
+replace CorrOVRX = r(rho) if CELL == 4
+
+
+spearman OVTOTAL RXTOTAL if CELL == 5
+replace CorrOVRX = r(rho) if CELL == 5
+
+
+spearman OVTOTAL RXTOTAL if CELL == 6
+replace CorrOVRX = r(rho) if CELL == 6
+
+
+spearman OVTOTAL RXTOTAL if CELL == 7
+replace CorrOVRX = r(rho) if CELL == 7
+
+*****************************************************
+*****************************************************
+*****************************************************
+
+keep CorrOVRX famid Individual counter year
+
+reshape wide CorrOVRX, i(counter) j(year)
+
+drop counter CorrOVRX2
+
+sort famid Individual
+
+save ".........................CorrOVRX.dta", replace
+
+**************************************************************************************************
+**************************************************************************************************
+**************************************************************************************************
+**************************************************************************************************
+*************************************************************************************************
+********************* Merge in Correlations Into Main Data File  *********************************
+*************************************************************************************************
+*************************************************************************************************
+*************************************************************************************************
+
+restore
+
+clear
+
+use "....................Cost Model PRocessing2.dta", clear
+
+sort famid Individual 
+
+merge famid Individual using ".......................CorrRX.dta"
+drop _merge
+
+sort famid Individual
+
+merge famid Individual using ".......................CorrOV.dta"
+drop _merge
+
+sort famid Individual
+
+merge famid Individual using ".........................CorrOVRX.dta"
+drop _merge
+
+************************************************************************
+************************************************************************
+*************************************** Now fill in correlation  *******
+****** Estimates for final year of choices based on previous year ******
+****** of measures *****************************************************
+************************************************************************
+
+gen CELL = (TOTCRindex_SC3 >=.15 & TOTCRindex_SC3 <=.4)
+replace CELL = 2 if (TOTCRindex_SC3 >=.4 & TOTCRindex_SC3 <=.8)
+replace CELL = 3 if (TOTCRindex_SC3 >=.8 & TOTCRindex_SC3 <=1.3)
+
+replace CELL = 4 if (TOTCRindex_SC3 >=1.3 & TOTCRindex_SC3 <=2)
+replace CELL = 5 if (TOTCRindex_SC3 >=2 & TOTCRindex_SC3 <=4)
+replace CELL = 6 if (TOTCRindex_SC3 >=4 & TOTCRindex_SC3<=7)
+replace CELL = 7 if (TOTCRindex_SC3 >=7 & TOTCRindex_SC3~=.)
+replace CELL = . if TOTCRindex_SC3==.
+
+preserve 
+
+keep CELL CorrOVRX4 CorrOVH4 CorrRXH4
+
+bysort CELL: gen counter = _n
+keep if counter ==1
+drop counter
+
+rename CorrOVRX4 CorrOVRX5
+rename CorrOVH4 CorrOVH5
+rename CorrRXH4 CorrRXH5
+
+sort CELL
+
+save ".................C5M.dta", replace
+
+restore
+
+drop CELL
+
+gen CELL = (TOTCRindex_SC4 >=.15 & TOTCRindex_SC4 <=.4)
+replace CELL = 2 if (TOTCRindex_SC4 >=.4 & TOTCRindex_SC4 <=.8)
+replace CELL = 3 if (TOTCRindex_SC4 >=.8 & TOTCRindex_SC4 <=1.3)
+
+replace CELL = 4 if (TOTCRindex_SC4 >=1.3 & TOTCRindex_SC4 <=2)
+replace CELL = 5 if (TOTCRindex_SC4 >=2 & TOTCRindex_SC4 <=4)
+replace CELL = 6 if (TOTCRindex_SC4 >=4 & TOTCRindex_SC4<=7)
+replace CELL = 7 if (TOTCRindex_SC4 >=7 & TOTCRindex_SC4~=.)
+replace CELL = . if TOTCRindex_SC4==.
+
+sort CELL
+
+merge CELL using "..................C5M.dta"
+drop _merge
+
+drop CELL
+
+save ".....................Cost Model PRocessing3.dta", replace 
+
+********************************************************************************************
+********************************************************************************************
+********************************************************************************************
+************ From here on out in actual code is all data processing, getting STATA 
+************ variables ready to be imported into MATLAB. This is all logistical and 
+************ somewhat lengthy so it is omitted here. Final file form is written into MATLAB
+************ file which is then used as input into PART II of code attached. Note that here
+************ here is an interim step where we simulate the MATLAB data to be used for Part II
+************ and the rest of the code to illustrate the use of that code. As noted in README 
+************ file since data are proprietary files only contain and use simulated data not 
+************ actual data.
+********************************************************************************************
+********************************************************************************************
+********************************************************************************************
+
+****keep varlist that goes into next step data file. Here data are simulated and input as discussed in readme file and 
+**** in simulated data construction file
+
+matwrite using "..............ASIN-Handel-SimulatedData.mat", replace
+
