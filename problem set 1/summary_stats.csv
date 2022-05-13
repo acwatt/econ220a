@@ -5,10 +5,10 @@ Plan,Mean
 1200,2540.2589424300413
 
 "Year 1 population mean of standard deviation of all draws of out-of-pocket expenditures, by plan"
-Plan,Mean
-250,1697.0664043205516
-500,2296.089197441705
-1200,2540.2589424300413
+Plan,SDs
+250,961.7303453588532
+500,1355.4312764400584
+1200,1412.3915438637162
 
 "Year 1 population mean of out-of-pocket expenditures, by plan, by family status"
 Plan,Family Status,Mean,Std Dev,Count

@@ -25,41 +25,15 @@ n = 21
 KNITRO.KN_add_vars(kc, n)
 
 
-
 _inf = KNITRO.KN_INFINITY
-lb = [
-          0.0     -0.5     -0.5      0.0
-        -_inf       0.1    -_inf       0.1
-          1.0      1.0      1.0      1.0
-        -_inf       0.0      0.0  -5000.0
-      -5000.0  -5000.0  -5000.0  -5000.0
-      -5000.0      0.0      0.0      0.0
-]
+lb2 = replace(lb, -Inf => -_inf, Inf => _inf)
+α₀2 = replace(α₀, -Inf => -_inf, Inf => _inf)
+ub2 = replace(ub, -Inf => -_inf, Inf => _inf)
 
-α₀ = [
-        0.06     0.003      0.0     0.04
-    -2500.0    700.0    -2200.0   800.0
-      300.0    800.0      300.0   800.0
-     -500.0   1250.0     1750.0  -500.0
-        0.0      0.0        0.0     0.0
-        0.0      0.0        0.0     0.0
-]
-
-
-ub = [
-        2.0      1.0      1.0      1.0
-        _inf      _inf      _inf      _inf
-    20000.0  20000.0  20000.0  20000.0
-        _inf   20000.0  20000.0   5000.0
-    5000.0   5000.0   5000.0   5000.0
-    5000.0      0.0      0.0      0.0
-]
-
-KNITRO.KN_set_var_lobnds(kc,  transform_to_21vec(lb)) # not necessary since infinite
-KNITRO.KN_set_var_upbnds(kc,  transform_to_21vec(ub))
+KNITRO.KN_set_var_lobnds(kc,  transform_to_21vec(lb2)) # not necessary since infinite
+KNITRO.KN_set_var_upbnds(kc,  transform_to_21vec(ub2))
 # Define an initial point.  If not set, Knitro will generate one.
-KNITRO.KN_set_var_primal_init_values(kc, transform_to_21vec(α₀))
-
+KNITRO.KN_set_var_primal_init_values(kc, transform_to_21vec(α₀2))
 
 # Set verbose printing level
 KNITRO.KN_set_param(kc, "outlev", 6)

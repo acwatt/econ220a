@@ -27,6 +27,8 @@ using StatsBase
 # Random Variable distributions
 using Random, Distributions
 Random.seed!(0);
+# Plotting
+using StatsPlots
 # Optimizing functions
 using Optim, NLSolversBase
 using LinearAlgebra: diag
@@ -92,6 +94,10 @@ PART A & B: EXPENDITURES & TABULATIONS
 ==========================================================#
 # Run the code in ps1_summarystats.jl to save summary stats to CSV
 include(string(dir,"ps1_summarystats.jl"))
+#! CANNOT RUN THIS AGAIN AFTER RUNNING ps1_transformdata.jl
+# ps1_transformdata.jl transforms the variables
+# Must reload using lines above if summary stats need to be rerun
+
 
 
 #==========================================================
@@ -210,8 +216,9 @@ function simulate_ϵ(α3)
 end
 
 function simulate_inertia(α)
-    # time-constant (for years 2,3) family vectors (nIs x 1)
+    # η₀, η₂: time-constant (for years 2,3) family vectors (nIs x 1)
     η₀ = α[4,2]*IND' .+ α[4,3]*(1 .- IND')
+    # η₁ * X
     INCOME = α[5,1]*Inc2  # No Inc for year 3, assume Inc3 = Inc2
     SOPHIST = α[5,2]*QS
     MANAGER = α[5,3]*managerX
@@ -303,7 +310,7 @@ data.
     α is a 6x4 matrix defined as:
 
     Row 1:
-        Col 1: intercept of the mean of the normal distribution of risk preferences  α[1,1]=2.23e-4
+        Col 1: intercept of the mean of the normal distribution of risk preferences  α[1,1]=2.32e-4
         Col 2: amount this mean shifts by if income tier increases by 1              α[1,2]=2.9e-5
         Col 3: amount the mean shifts by if family max. age increases by 1                  2.27e-6
         Col 4: standard deviation of the risk preference random coefficient                 1.88e-4
@@ -340,7 +347,7 @@ data.
         Col 4: 
 
     The estimated α from the paper is
-    α = [2.23e-4 2.90e-5 2.27e-6 1.88e-4
+    α = [2.32e-4 2.90e-5 2.27e-6 1.88e-4
           -2912     843   -2871     897
             204     502     329     811
             856    2480    1729    -551
@@ -826,7 +833,7 @@ ub = [
 ub_vec = transform_to_21vec(ub)
 
 α₂ = [
-    0.000223     2.9e-5      2.27e-6     0.000188
+    0.000232     2.9e-5      2.27e-6     0.000188
     -2912.0        843.0     -2871.0       897.0
       204.0        502.0       329.0       811.0
       856.0       2480.0      1729.0      -551.0
@@ -1040,34 +1047,46 @@ AWS elastic compute instance to run something like this
 in parallel, where the RAM and CPU can scale easily.
 =# #######################################################
 
+#! Optimize on the full 6x4 α matrix
+resNM = Optim.optimize(nLL, lb, ub, α₀, NelderMead(), Optim.Options(iterations=50))
+Optim.minimizer(resNM)
+Optim.minimum(resNM)
+Optim.iterations(resNM)
+#= This results in some of the three zeros being non-zero,
+which doesn't really matter, but wanted to use a 21-vector
+version instead. =#
 
-# resNM = Optim.optimize(nLL, lb, ub, α₀, NelderMead(), Optim.Options(iterations=50))
-# Optim.minimizer(resNM)
-# Optim.minimum(resNM)
-# Optim.iterations(resNM)
 
-#=
-julia> Optim.minimizer(resNM)
-6×4 Matrix{Float64}:
-     0.0562571      0.00166986     -0.000166282     0.0449254
- -2537.15         704.085       -2193.35          791.564
-   293.436        768.017         310.136         828.315
-  -504.87        1318.41         2331.0          -485.404
-     0.00150326     0.00103796      0.00128919      0.00140051
-     0.0011686      7.95876e-5     -0.000276149    -0.000799145
+#! Compare between NelderMead and SAMIN
 
-julia> minimum(resNM)
-5438.954383339348
-
+#= NELDERMEAD RESULT AFTER 50 ITERATIONS
+minimum(resNM) = 5438.954383339348
     Seconds run:   967  (vs limit Inf)
     Iterations:    50
     f(x) calls:    567
+
+SAMIN RESULT AFTER 50 ITERATIONS
+minimum(resSM) = 4130.821817817749
+    Seconds run:   85  (vs limit Inf)
+    Iterations:    50
+    f(x) calls:    50
+
+I think the NelderMead run used the 6x4 matrix, so it may have taken longer
+just because it had more parameters to change, even though those parameters
+did not actually affect the function value. But the difference in the
+likelihood value after 50 iterations made me think SAMIN would be good for
+this short test. I did other longer comparisons, but didn't save the results
+but in general, SAMIN minimized the function much faster than NelderMead.
+I don't know if this is generalizable, but might be worth comparing
+NelderMead, SAMIN, and Knitro over many iterations for any serious research project.
+Perhaps running all in parallel. And need to search many points. 
 =#
 
 # Time limit for each of 5 iterations to finish in 8 hours (in seconds)
 time_limit5 = round(8*3600/5)
 max_iter = 40_000
 
+#! Save results from 5 different starting parameter vectors using SAMIN
 results = Dict(); i=0;
 for a ∈ [alpha0, alpha1, alpha2, alpha3, alpha4]
     resSM = Optim.optimize(nLL_vec, transform_to_21vec(lb), transform_to_21vec(ub), 
@@ -1083,52 +1102,46 @@ for a ∈ [alpha0, alpha1, alpha2, alpha3, alpha4]
     i += 1
 end
 
+# Convert strings saved to vectors
+# reordering index vector to match order in paper
+ rr = [15, 10, 20, 5, 11, 16, 21, 6, 1, 7, 12, 17, 2, 8, 13, 18, 4, 3, 9, 14, 19]
 
-Optim.minimum(resSM)
-Optim.iterations(resSM)
+# ax: final param values; fx: final function value; iterx: function iterations; hourx: hours run
+alpha0
+a0 = transform_to_21vec([0.09688801258129792 0.0031723346939378973 -0.00011720381932389255 0.0231123314570683; -2500.0 700.0 -2200.0 800.0; 1263.0280770307288 32.60199522848822 11822.503819486612 5843.938487718894; -500.0 9464.105148578532 19796.688827386457 2744.4285755036844; 4566.83601823626 2618.8911679089965 4945.547619297684 4599.025722723732; 4252.686338748319 0.0 0.0 0.0])
+f0 = 2.636075e+03
+iter0 = 3683
+hour0 = 8/5
+col0 = [a0[rr]; [f0]; [iter0]; [hour0]]
 
-    # exampleFileIOStream =  open("SAMIN-log.txt","a")
-    # show(io, r)
-    # write(exampleFileIOStream, String(r));
+alpha1
+a1 = transform_to_21vec([0.33002667495341054 -0.020415136894857633 -0.4506208593746673 0.07666154611931172; 600.0 0.1 2500.0 300.0; 10088.418769865137 5327.0770765116085 5641.200606354002 1470.1555917804735; -1500.0 16059.153059978 17954.55550591196 800.6473700094812; 4149.55130858559 -740.6309433652841 3230.3487060441985 730.9802312789325; 3658.9380548488753 0.0 0.0 0.0])
+f1 = 7.006379e+03
+iter1 = 3804
+hour1 = 8/5
+col1 = [a1[rr]; [f1]; [iter1]; [hour1]]
 
-#=
-    Seconds run:   881  (vs limit Inf)
-    Iterations:    500
-    f(x) calls:    500
+alpha2
+a2 = transform_to_21vec([0.33002667495341054 -0.020415136894857633 -0.4506208593746673 0.07666154611931172; 600.0 0.1 2500.0 300.0; 10088.418769865137 5327.0770765116085 5641.200606354002 1470.1555917804735; -1500.0 16059.153059978 17954.55550591196 800.6473700094812; 4149.55130858559 -740.6309433652841 3230.3487060441985 730.9802312789325; 3658.9380548488753 0.0 0.0 0.0])
+f2 = 7.006379e+03
+iter2 = 3804
+hour2 = 8/5
+col2 = [a2[rr]; [f2]; [iter2]; [hour2]]
 
-julia> transform_to_mat(Optim.minimizer(resSM)...)
-6×4 Matrix{Float64}:
-     0.117723     0.003      0.0      0.0231414
- -2500.0        700.0    -2200.0    800.0
-  2261.76       774.929  10840.0   5409.73
-  -500.0       6194.61   18091.9   3767.75
-  4821.58       918.947   1555.81  3199.44
-  1523.74         0.0        0.0      0.0
+alpha3
+a3 = transform_to_21vec([0.07077629277866049 0.007360715245031127 0.00024211588307838133 0.04606341465723755; 1500.0 0.1 1700.0 1.0; 803.4826373995114 143.5630946235941 9511.086878827799 4080.024004492574; -1000.0 15961.01258553203 17347.8532119649 2008.01646713804; 3260.3224609100957 -1108.4887563414381 3793.489435633259 1915.9255204139442; 2102.074815042707 0.0 0.0 0.0])
+f3 = 2.749408e+03
+iter3 = 3794
+hour3 = 8/5
+col3 = [a3[rr]; [f3]; [iter3]; [hour3]]
 
-julia> Optim.minimum(resSM)
-2726.895823664534
+alpha4
+a4 = transform_to_21vec([0.9 0.05 0.003 0.06; 1000.0 0.1 1500.0 100.0; 150.0 150.0 150.0 150.0; -2000.0 800.0 1050.0 -700.0; -50.0 -50.0 100.0 100.0; -50.0 0.0 0.0 0.0])
+f4 = NaN
+iter4 = 3709
+hour4 = 8/5
+col4 = [a4[rr]; [f4]; [iter4]; [hour4]]
 
-
-
-
-
-    Seconds run:   85  (vs limit Inf)
-    Iterations:    50
-    f(x) calls:    50
-
-julia> transform_to_mat(Optim.minimizer(resSM)...)
-6×4 Matrix{Float64}:
-     0.0343474      0.003      0.0      0.04
- -2500.0          700.0    -2200.0    800.0
-   300.0          800.0      300.0    800.0
-  -500.0        13798.4     9318.86  4925.84
-   883.136       3443.94    3707.89   463.592
-  3660.78           0.0        0.0      0.0
-
-julia> Optim.minimum(resSM)
-4130.821817817749
-
-=#
 
 
 
@@ -1149,7 +1162,6 @@ the other starting parameter values. Knitro seems to take
 longer but more reliably minimizes the objective function.
 (After just a few hours, it got to a lower value than
 leaving the NelderMead alogrithm to run for 7.1 hours). 
-
 
 
 
@@ -1190,43 +1202,58 @@ x[      17] =   8.01689955868e+02,   lambda[      17] =  -7.06225156035e-11
 x[      18] =   1.00000330348e+00,   lambda[      18] =  -2.66111523059e-02
 x[      19] =   4.63907933581e+03,   lambda[      19] =   1.12066338522e-06
 x[      20] =   4.99999992143e+03,   lambda[      20] =   6.49951182089e-04
-
 ===============================================================================
 =# #######################################################
+include(string(dir,"knitro-applied.jl"))
 
-# Create a gradient (and hessian?)
-func = TwiceDifferentiable(nLL, α₀; autodiff=:forward);
-opt = optimize(func, α₀)
+# Convert above string results to vector of parameters
+x=Dict()
+x[ 0] =   5.81624945391e-03
+x[ 1] =  -2.50000000000e+03
+x[ 2] =   1.87592278071e+02
+x[ 3] =  -5.00034030392e+02
+x[ 4] =   4.99999999058e+03
+x[ 5] =   1.29503272026e+03
+x[ 6] =  -4.76759555815e-04
+x[ 7] =   7.01983506841e+02
+x[ 8] =   1.00000257523e+00
+x[ 9] =   1.26422116323e+04
+x[10] =  -2.42213712488e+03
+x[11] =  -1.25474724273e-05
+x[12] =  -2.20000420498e+03
+x[13] =   7.65718286314e+03
+x[14] =   1.99999999789e+04
+x[15] =   4.99999947757e+03
+x[16] =   2.93511072139e-05
+x[17] =   8.01689955868e+02
+x[18] =   1.00000330348e+00
+x[19] =   4.63907933581e+03
+x[20] =   4.99999992143e+03
+# minimizing parameter vector
+a5 = [x[i] for i in 0:20]
+# minimized function value
+f5 = 2.57664797201973e+03
+# # of function evaluations
+iter5 = 11643
+# hours spent
+hour5 = 25651.86133 / 3600
+# Put into one column
+col5 = [a5[rr]; [f5]; [iter5]; [hour5]]
 
-# No gradient
-opt = optimize(nLL, α₀)
 
-# No gradient? 2
-Optim.minimizer(optimize(nLL, α₀, BFGS()))
-
-# No gradient 3
-Optim.minimizer(optimize(nLL, α₀, BFGS(); autodiff = :forward))
-
-# Add upper and lower bounds
-inner_optimizer = GradientDescent()
-results = optimize(f, g!, lower, upper, initial_x, Fminbox(inner_optimizer))
-
-optimize(f, x0, LBFGS(); autodiff = :forward)
-
-
-results = optimize(f, lower, upper, initial_x, NelderMead())
+# Table made by hand in ps1-tables.ods
+# then copy-pasta'd to tablesgenerator.com for formatting
 
 
 
 
-# Nelder-Mead, no Gradient
-opt = optimize(nLL_bound, α₀)
 
-# Could try Simulated Annealing with bounds (SAMIN) https://julianlsolvers.github.io/Optim.jl/stable/#algo/samin/
 
-# Could try Particle Swarm https://julianlsolvers.github.io/Optim.jl/stable/#algo/particle_swarm/
 
-#! Can I use a numerical gradient?
+
+
+
+
 
 
 
@@ -1300,17 +1327,12 @@ results = optimize(f, lower, upper, initial_x, Fminbox(inner_optimizer))
 inner_optimizer = GradientDescent()
 results = optimize(nLL, lb, ub, α₀, Fminbox(inner_optimizer))
 results2 = optimize(nLL, lb, ub, α₂, Fminbox(inner_optimizer))
+# Doesn't work because the gradient is evaluated as NaN (i think)
 
 
 
 
-
-
-
-
-
-
-
+# Custom printing function
 start_time = time()
 time_to_setup = zeros(1)
 function advanced_time_control(x)
@@ -1356,6 +1378,10 @@ results3 = optimize(nLL_vec, transform_to_21vec(lb), transform_to_21vec(ub), tra
 
 #=========
 Try using KNITRO with JuMP
+JuMP is a nice modeling syntax
+But I was unable to get this to work and instead
+just used the base-knitro julia handler
+see knitro-applied.jl
 =========#
 # Example 1
 model = Model(KNITRO.Optimizer)
@@ -1414,7 +1440,7 @@ solution_summary(model)
 Try using KNITRO without JuMP
 =========#
 #! try to find the replication package from the published paper
-
+# see knitro-applied.jl
 
 
 
@@ -1434,7 +1460,7 @@ opt.lower_bounds = transform_to_21vec(lb)
 opt.upper_bounds = transform_to_21vec(ub)
 opt.maxeval = 1000 # Increase this eventually
 (optf,optx,ret) = NLopt.optimize(opt, transform_to_21vec(α₀))
-
+# This just uses NLopt, not knitro yet. Was just trying to get NLopt to run
 
 
 
@@ -1456,8 +1482,22 @@ PART D
 Incorporating demographic heterogeneity and the parameter es-
 timates, what is the population distribution of inertial costs?
 ==========================================================#
-
-
+#Evaluate η(α) at the Knitro solution,
+# and estimate the distribution... for plot a kernal density?
+A5 = transform_to_mat(a5...)
+η5 = simulate_inertia(A5)
+ηcomb = Dict(2 => zeros(nIs), 3 => zeros(nIs))
+for plan ∈ plans, year ∈ [2,3]
+    ηcomb[year] .+= η5["$plan$year"][:,1,1] ./ 1000
+end
+df2 = DataFrame(year = "year 2", η = ηcomb[2])
+df3 = DataFrame(year = "year 3", η = ηcomb[3])
+df = vcat(df2, df3)
+p4d = @df df density(:η, group = (:year), legend = :topleft)
+xlabel!("Interia Costs (\$\$1000)")
+ylabel!("kernel density")
+title!("Density Plots of Inertial Costs, by year")
+savefig(p4d, "4-d.svg")
 
 
 
@@ -1471,6 +1511,13 @@ where they win $100 with 50% probability and lose $X with 50%
 probability.
 ==========================================================#
 
+# mean of the calculated coefficients for each family
+risks5 = simulate_risk_dist(α_mean = A5[1,1],
+                            α_income = A5[1,2], 
+                            α_age = A5[1,3], 
+                            α_sd = A5[1,4], 
+                            rand_coef = randcoef_risk
+                            )[:,:,1] # last index is just a copy
 
 
 
@@ -1486,6 +1533,89 @@ as estimates? Why?
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+#!                      NOTES SECTION
+#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+#==========================================================
+OTHER OPTIMIZATION FUNCTIONS using derivatives
+
+See below link for Optim solvers and use cases.
+https://julianlsolvers.github.io/Optim.jl/stable/#user/config/#solver-options
+
+For a low-dimensional problem with analytic gradients and 
+Hessians, use the Newton method with trust region. For larger 
+problems or when there is no analytic Hessian, use LBFGS, 
+and tweak the parameter m if needed. If the function is 
+non-differentiable, use Nelder-Mead. Use the HagerZhang 
+linesearch for robustness and BackTracking for speed.
+
+Also, these methods could be good for large search domains
+when there is no way to autdiff the gradient,
+but all the usual features are not fully implented:
+- Simulated Annealing
+- Simulated Annealing with bounds SAMIN
+- Particle Swarm
+==========================================================#
+
+# Create a gradient (and hessian?)
+func = TwiceDifferentiable(nLL, α₀; autodiff=:forward);
+opt = optimize(func, α₀)
+
+
+# Nelder-Mead, no Gradient
+opt = optimize(nLL, α₀)
+# Did not finish after >24 hours. Uses NelderMead, 
+# but because I never gave it stopping time/iterations, it just keeps
+# going until it coverges
+results = optimize(f, lower, upper, initial_x, NelderMead())
+
+# No gradient? Maybe it caluculates a gradient
+Optim.minimizer(optimize(nLL, α₀, BFGS()))
+
+# No gradient 3 (tries to find analytical-ish gradient using autodiff, but doesn't work for this function)
+Optim.minimizer(optimize(nLL, α₀, BFGS(); autodiff = :forward))
+
+# If I had a gradient g!
+# Add upper and lower bounds
+inner_optimizer = GradientDescent()
+results = optimize(f, g!, lower, upper, initial_x, Fminbox(inner_optimizer))
+
+# Limited memory -- can often converge faster, but may be less accurate.
+# see 
+optimize(f, x0, LBFGS(); autodiff = :forward)
+
+
+# Could try Simulated Annealing with bounds (SAMIN) https://julianlsolvers.github.io/Optim.jl/stable/#algo/samin/
+
+# Could try Particle Swarm https://julianlsolvers.github.io/Optim.jl/stable/#algo/particle_swarm/
+
+#! Which methods use a numerical gradient?
 
 
 
@@ -1571,9 +1701,6 @@ c1 = @constraint(model, x[1] + x[2]^2 >= 0)
 JuMP.optimize!(model)
 ```
 ==========================================================#
-
-
-
 
 
 

@@ -1,8 +1,3 @@
-
-
-
-
-
 #==============================================================================
                                HELPER FUNCTIONS
 ==============================================================================#
@@ -18,10 +13,6 @@ function append_summary(df, title; replace=false)
     # Append dataframe to CSV
     CSV.write(summary_file, df, append=true, writeheader=true)
 end
-
-
-
-
 
 
 #==============================================================================
@@ -54,9 +45,9 @@ sds = []
 for plan ∈ plans
     var = eval(Symbol(string("PPO", plan, "OOP1")))
     println("$title $plan: $(mean(std(var, dims=2)))")
-    append!(sds, mean(var))
+    append!(sds, mean(std(var, dims=2)))
 end
-df = DataFrame(Plan=plans, Mean=means)
+df = DataFrame(Plan=plans, SDs=sds)
 append_summary(df, title)
 
 # Provide the above two statistics,  broken down by family 
