@@ -32,9 +32,8 @@ Random.seed!(0);
 #?==============================================================================
 #?                                 SETUP
 #?==============================================================================
-dir = "/media/a/E/Programming/github/econ220a/problem set 2/"
-file = "ps1data.csv"
-df = DataFrame(CSV.File(string(dir, file)))
+# Load data
+df = DataFrame(CSV.File(string(dirname(@__FILE__), "/ps1data.csv")))
 
 
 
