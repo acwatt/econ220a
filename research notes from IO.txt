@@ -39,6 +39,27 @@ What are the things about the market that seem extremeley different from an IO p
 
 If there are large positive externalities ==> reasoning for heavy subsidies
 
+Optimal resource extraction of an asteroid orbiting the moon under different property ownership regemes.
+- the company owns the asterroid
+- public ownership (free for all)
+- leased plots
+
+Need a model of water extraction (increasing marginal costs, like oil)
+Extremely high fixed costs like nuclear
+
+What does this look like under different market structures?
+What if SpaceX vertically integrates a mining company? Then they are a monopoly in the transport & mining
+- like if an electricity distributor (transport) also owned electricity generation
+- like printers (offer cheaper transport to space, and marked up cost of fuel)
+- people get more concern when a single entity that gets more and more control over something important: when one actor has complete control over the fuel sorce in space?
+- property rights increase over time and early exploration might have a large positive externality. May want to incentivize early exploration, then decrease over time.
+-- electric cars: build charging stations during building e- cars. -- what are the policies that incentivise the increase of the size
+
+- is there current regulation preventing e- distributors from owning e- generation?
+
+Double marginalization: two stacked monopolies markups
+
+
 
 
 
@@ -74,10 +95,62 @@ Could there be a transition from public property rights to private property righ
 Could think about parallels with colonization
 
 
+==============================================================
+      Identification
+==============================================================
+- look at the intro of good papers -- they will often have a part talking about identification, like DiD, natural experiment, randomization, etc
+
+
+==============================================================
+      Data partnerships
+==============================================================
+- startups (less support, and could lose interest over time, but past students have found success from being enrurpenurial)
+- big established firms (harder to get for students, but typically more organized)
+
+Questions to answer:
+- how is the firm benefiting?
+- how clear is the contract about publishing rights?
+- how clear is the contract about commitment to data access?
+
+How to reach out to a firm?
+- cold emails can work, but try other methods if possible
+- if you know someone thorugh your network, that works better
+- do any of your faculty have connections? (probably most productive way)
+
+Datasets that faculty have access to:
+- all-payer claims datasets
+- labor datasets
+
+- data setup on campus
+- experiments, surveys, webscraping, other?
+- buying data - requires funding, and that you make sure ur going to use it effectively
+
+
+==============================================================
+      Conferences
+==============================================================
+- IO threory (Dec 2022, Columbia)
+- NBER IO (stanford or boston)
+- Coles conference at Yale (different applied theory conferences)
+- Stanford SITEs Conferences (theroetical econometrics)
+- IIOC (april, boston) 
 
 
 
 
+
+
+
+
+
+
+==============================================================
+      Overall ToDos
+==============================================================
+- IO lunch*
+- IO seminar
+- public lunch?
+- public seminars
 
 
 
