@@ -1,0 +1,51 @@
+"Year 1 population mean of all draws of out-of-pocket expenditures, by plan"
+Plan,Mean
+250,1697.0664043205516
+500,2296.089197441705
+1200,2540.2589424300413
+
+"Year 1 population mean of standard deviation of all draws of out-of-pocket expenditures, by plan"
+Plan,SDs
+250,961.7303453588532
+500,1355.4312764400584
+1200,1412.3915438637162
+
+"Year 1 population mean of out-of-pocket expenditures, by plan, by family status"
+Plan,Family Status,Mean,Std Dev,Count
+250,Single,1697.934,958.648,988
+250,With Spouse & Children,1648.929,941.171,757
+250,With Children,1800.034,995.021,146
+250,With Spouse,1775.264,1006.715,378
+250,Unknown (11),1335.7,846.024,19
+250,Unknown (12),625.402,432.825,2
+500,Single,2297.851,1353.943,988
+500,With Spouse & Children,2241.219,1335.189,757
+500,With Children,2439.455,1392.221,146
+500,With Spouse,2376.911,1397.167,378
+500,Unknown (11),1832.903,1205.597,19
+500,Unknown (12),853.638,601.957,2
+1200,Single,2539.6,1412.768,988
+1200,With Spouse & Children,2487.9,1393.947,757
+1200,With Children,2683.561,1428.946,146
+1200,With Spouse,2623.68,1451.762,378
+1200,Unknown (11),2056.615,1292.341,19
+1200,Unknown (12),1050.427,698.779,2
+
+Family Status Tabulation
+Family Status,Count
+Single,988
+With Spouse & Children,757
+With Children,146
+With Spouse,378
+Unknown (11),19
+Unknown (12),2
+
+Family and Individual Tabulations
+Variable,Mean,Std Dev,Median,Min,Max,Count
+Chronic condition in family,0.4576419213973799,0.4983113758861055,0.0,0.0,1.0,2290
+Enrollment in Flexible Spending Account,0.3388646288209607,0.4734271506198728,0.0,0.0,1.0,2290
+Employee Manager Status,0.3026200873362445,0.45949251142337955,0.0,0.0,1.0,2290
+Income,2.5694323144104803,1.2064085941093532,2.0,1.0,5.0,2290
+Family Size,1.943231441048035,1.0094832314814888,2.0,1.0,4.0,2290
+Age (by individual),38.45008474851654,20.684796976152928,41.09363677241389,0.0022532402725747858,74.99404883036924,4450
+Gender (by individual),0.5031460674157303,0.5000462902950996,1.0,0.0,1.0,4450
