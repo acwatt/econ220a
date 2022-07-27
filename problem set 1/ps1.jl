@@ -133,7 +133,9 @@ include(string(dir,"ps1_transformdata.jl"))
 
 
 
-
+#==========================================================
+                        FUNCTIONS
+==========================================================#
 
 elmax(x, a) = [maximum([i, a]) for i in x]
 
@@ -174,7 +176,7 @@ function simulate_ppo1200_dist(; αm_sgl, αsd_sgl, αm_fam, αsd_fam, rand_coef
 end
 
 
-"""Create ​ ϵₖⱼₜ with sd = σ​²_ϵⱼ(​Yₖ) (vector of family-plan-time specific shocks)
+"""Create ϵₖⱼₜ with sd = σ²_ϵⱼ(Yₖ) (vector of family-plan-time specific shocks)
     k = family, j = plan, t = year. 
     For each plan-year, create an nIs x Sim matrix of family-specific shocks,
     based on family status IND (nIs x 1) and ϵ matricies (1 x Sim)
@@ -1460,7 +1462,7 @@ opt.lower_bounds = transform_to_21vec(lb)
 opt.upper_bounds = transform_to_21vec(ub)
 opt.maxeval = 1000 # Increase this eventually
 (optf,optx,ret) = NLopt.optimize(opt, transform_to_21vec(α₀))
-# This just uses NLopt, not knitro yet. Was just trying to get NLopt to run
+# The above code just uses NLopt, not knitro yet. Was just trying to get NLopt to run
 
 
 
