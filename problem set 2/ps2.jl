@@ -40,13 +40,7 @@ using Luxor: Point,arrow,@draw,ellipse,circle,fontsize,sethue,label
 # Load data
 cd(dirname(@__FILE__))
 df = DataFrame(CSV.File(string(dirname(@__FILE__), "/ps1data.csv")))
-# Add δ (mean utility levels)
-df = add_logit_depvar!(df)
-# Add group identifier (problem 2)
-group_dict = Dict(1=>1, 2=>2, 3=>2, 4=>3, 5=>3)
-df = @chain df assign(:prodid => (x -> get.(Ref(group_dict), x, missing)) => :group)
-# Add within group-market shares ̄sⱼₕ
-df = add_ingroup_share!(df)
+
 
 
 
@@ -141,6 +135,17 @@ assign(df, args...) = DataFramesMeta.transform(df, args...)
 
 
 
+"""Create the within-group share variable ̄sⱼₕ"""
+function add_ingroup_share!(df)
+    # Calculate in-group share within each market-group
+    df.sjhn = @chain df begin
+        groupby([:market, :group])
+        combine(:sjn => (x -> (x ./ sum(x))) => :sjhn)
+        _.sjhn
+    end
+    return df
+end
+
 
 
 
@@ -148,6 +153,16 @@ assign(df, args...) = DataFramesMeta.transform(df, args...)
 
 #*#############################################################################
 #*####################### QUESTION 1 WORK #####################################
+
+# Add δ (mean utility levels)
+df = add_logit_depvar!(df)
+# Add group identifier (problem 2)
+group_dict = Dict(1=>1, 2=>2, 3=>2, 4=>3, 5=>3)
+df = @chain df assign(:prodid => (x -> get.(Ref(group_dict), x, missing)) => :group)
+# Add within group-market shares ̄sⱼₕ
+df = add_ingroup_share!(df)
+
+
 ############# PART A
 # Estimate an aggregate Logit model using OLS (Product 3 is reference group)
 df1a = copy(df)
@@ -218,10 +233,22 @@ repl_dict = Dict("δjn" => "\$\\delta_{jn}\$", "_avg" => "\$_{\\text{avg}}\$")
 regtable(reg1a,reg1b_ss,reg1c; renderSettings = asciiOutput(), regression_statistics = [:nobs, :r2, :f_kp], transform_labels = repl_dict)
 regtable(reg1a,reg1b_ss,reg1c; renderSettings = latexOutput("1-secondstages.tex"), regression_statistics = [:nobs, :r2, :f_kp], transform_labels = repl_dict)
 regtable(reg1b_fs,reg1c_fs; renderSettings = asciiOutput(), regression_statistics = [:nobs, :r2, :f, :f_kp], transform_labels = repl_dict)
-regtable(reg1b_fs,reg1c_fs; renderSettings = latexOutput("1-bothstages.tex"), regression_statistics = [:nobs, :r2, :f, :f_kp], transform_labels = repl_dict)
-
-regtable(reg1a,reg1b_ss,reg1c,reg1b_fs,reg1c_fs; renderSettings = asciiOutput(), regression_statistics = [:nobs, :r2, :f, :f_kp], transform_labels = repl_dict)
 regtable(reg1b_fs,reg1c_fs; renderSettings = latexOutput("1-firststages.tex"), regression_statistics = [:nobs, :r2, :f, :f_kp], transform_labels = repl_dict)
+
+# Testing putting first and second stages in same table
+regtable(reg1a,reg1b_ss,reg1c,reg1b_fs,reg1c_fs;
+         renderSettings = asciiOutput(),
+         regression_statistics = [:nobs, :r2, :f], 
+         transform_labels = repl_dict,
+         groups=["2nd Stage" "2nd Stage" "2nd Stage" "1st Stage" "1st Stage"])
+regtable(reg1a,reg1b_ss,reg1c,reg1b_fs,reg1c_fs;
+         renderSettings = latexOutput("1-bothstages.tex"),
+         regression_statistics = [:nobs, :r2, :f], 
+         transform_labels = repl_dict,
+         groups=["2nd Stage" "2nd Stage" "2nd Stage" "1st Stage" "1st Stage"])
+
+
+# Create table of price elasticities
 
 
 
@@ -345,16 +372,6 @@ df1a[!, [:market, :sjn, :δjn, :ηjjn, :ηj3n, :prodid]]
 
 
 
-"""Create the within-group share variable ̄sⱼₕ"""
-function add_ingroup_share!(df)
-    # Calculate in-group share within each market-group
-    df.sjhn = @chain df begin
-        groupby([:market, :group])
-        combine(:sjn => (x -> (x ./ sum(x))) => :sjhn)
-        _.sjhn
-    end
-    return df
-end
 
 using StatsModels: predict
 using DataFrames: groupby
