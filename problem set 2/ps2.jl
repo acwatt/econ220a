@@ -24,6 +24,7 @@ using Random, Distributions
 Random.seed!(0);
 # Output to files
 using Latexify
+using RegressionTables
 using Luxor: Point,arrow,@draw,ellipse,circle,fontsize,sethue,label
 # Optimizing functions
 # using Optim, NLSolversBase
@@ -37,6 +38,7 @@ using Luxor: Point,arrow,@draw,ellipse,circle,fontsize,sethue,label
 #?                                 SETUP
 #?=============================================================================
 # Load data
+cd(dirname(@__FILE__))
 df = DataFrame(CSV.File(string(dirname(@__FILE__), "/ps1data.csv")))
 # Add δ (mean utility levels)
 df = add_logit_depvar!(df)
@@ -59,68 +61,6 @@ df = add_ingroup_share!(df)
 #?=============================================================================
 #?=============================================================================
 #?=============================================================================
-############# PART A
-# Estimate an aggregate Logit model using OLS (Product 3 is reference group)
-
-df1a = copy(df)
-# Regress δ on X to estimate α,β that minimizes error term
-# δ = mean "observed" utility, Xβ-αp = mean predicted utility (α,β are mean utility parameters)
-reg1a = reg(df1a, @formula(δjn ~ pjn + d1 + d2  + d4 + d5 + x1 + x2), Vcov.cluster(:market))
-# Predict the shares using Xβ-αp (Nevo Eq. 6)
-add_predicted_shares!(reg1a, df1a)
-# Calculate estimated own-price elasticities for each product 
-# Calculate estimated cross-price elasticity with respect to product 3.
-add_price_elasticities!(reg1a, df1a)
-df1a[!, [:market, :sjn, :δjn, :ηjjn, :ηj3n, :prodid]]
-
-
-
-df1b = copy(df)
-# Regress δ on X to estimate α,β that minimizes error term
-# δ = mean "observed" utility, Xβ-αp = mean predicted utility (α,β are mean utility parameters)
-reg1b_ss = reg(df1b, @formula(δjn ~ (pjn ~ w1 + w2) + d1 + d2  + d4 + d5 + x1 + x2), Vcov.cluster(:market))
-# Predict the shares using Xβ-αp (Nevo Eq. 6)
-add_predicted_shares!(reg1b_ss, df1b)
-# Calculate estimated own-price elasticities for each product 
-# Calculate estimated cross-price elasticity with respect to product 3.
-add_price_elasticities!(reg1b_ss, df1b)
-
-df1c = copy(df)
-# Create instrument: avg characteristics of other products
-add_avg_characteristics!(df1c)
-# Regress δ on X to estimate α,β that minimizes error term
-# δ = mean "observed" utility, Xβ-αp = mean predicted utility (α,β are mean utility parameters)
-reg1c = reg(df1c, @formula(δjn ~ (pjn ~ x1_avg + x2_avg) + d1 + d2  + d4 + d5 + x1 + x2), Vcov.cluster(:market))
-# Predict the shares using Xβ-αp (Nevo Eq. 6)
-add_predicted_shares!(reg1c, df1c)
-# Calculate estimated own-price elasticities for each product 
-# Calculate estimated cross-price elasticity with respect to product 3.
-add_price_elasticities!(reg1c, df1c)
-
-
-
-# Average (across markets) elasticities of OLS model
-@chain df1a begin
-	groupby(:prodid)
-	combine(:ηjjn => mean => :ηjj, :ηj3n => mean => :ηj3)
-	latexify(_, fmt=FancyNumberFormatter(3))
-end
-
-# Average (across markets) elasticities of IV model
-@chain df1b begin
-	groupby(:prodid)
-	combine(:ηjjn => mean => :ηjj, :ηj3n => mean => :ηj3)
-	# rename(:ηjj => :ηⱼⱼ, :ηj3 => :ηⱼ₃)
-	latexify(_, fmt=FancyNumberFormatter(3))
-end
-
-
-# First stage cost-shift instruments of IV model
-reg1b_fs = reg(df, @formula(pjn ~ w1 + w2 + d1 + d2  + d4 + d5 + x1 + x2), Vcov.cluster(:market))
-
-# Fist stage average characteristic instruments of IV model
-reg1c_fs = reg(df1c, @formula(pjn ~ x1_avg + x2_avg + d1 + d2  + d4 + d5 + x1 + x2), Vcov.cluster(:market))
-
 
 #*#############################################################################
 #*####################### QUESTION 1 FUNCTIONS ################################
@@ -156,8 +96,10 @@ end
 
 """Estimate own-price and cross-price elasticities of the predicted market shares; add columns.
 
-Only adds cross-price elasticities relative to product 3.
-ηjjn and ηj3n
+    Only adds cross-price elasticities relative to product 3.
+    ηjjn and ηj3n
+    Nevo (2000) pg 522
+    Need to use the predicted market share (̂sⱼₙ = Xβ)
 """
 function add_price_elasticities!(reg, df)
 	sort!(df, [:market, :prodid])
@@ -195,9 +137,91 @@ function get_coef(reg, var)
 end
 
 
-
 assign(df, args...) = DataFramesMeta.transform(df, args...)
 
+
+
+
+
+
+
+
+#*#############################################################################
+#*####################### QUESTION 1 WORK #####################################
+############# PART A
+# Estimate an aggregate Logit model using OLS (Product 3 is reference group)
+df1a = copy(df)
+# Regress δ on X to estimate α,β that minimizes error term
+# δ = mean "observed" utility, Xβ-αp = mean predicted utility (α,β are mean utility parameters)
+reg1a = reg(df1a, @formula(δjn ~ pjn + d1 + d2  + d4 + d5 + x1 + x2), Vcov.cluster(:market))
+# Predict the shares using Xβ-αp (Nevo Eq. 6)
+add_predicted_shares!(reg1a, df1a)
+# Calculate estimated own-price elasticities for each product 
+# Calculate estimated cross-price elasticity with respect to product 3.
+add_price_elasticities!(reg1a, df1a)
+df1a[!, [:market, :sjn, :δjn, :ηjjn, :ηj3n, :prodid]]
+
+
+
+############# PART B
+# Estimate the same Logit model using IV with cost-shifters as instruments
+df1b = copy(df)
+# IV Regress δ on X to estimate α,β that minimizes error term, Cost Shifter istruments (w's)
+# δ = mean "observed" utility, Xβ-αp = mean predicted utility (α,β are mean utility parameters)
+reg1b_ss = reg(df1b, @formula(δjn ~ (pjn ~ w1 + w2) + d1 + d2  + d4 + d5 + x1 + x2), Vcov.cluster(:market))
+# Predict the shares using Xβ-αp (Nevo Eq. 6)
+add_predicted_shares!(reg1b_ss, df1b)
+# Calculate estimated own-price elasticities for each product 
+# Calculate estimated cross-price elasticity with respect to product 3.
+add_price_elasticities!(reg1b_ss, df1b)
+
+
+############# PART C
+# Estimate the same Logit model using IV with the average of the characteristics of other products as instruments
+df1c = copy(df)
+# Create instrument: avg characteristics of other products
+add_avg_characteristics!(df1c)
+# Regress δ on X to estimate α,β that minimizes error term, avg other product x's (x_avg's)
+# δ = mean "observed" utility, Xβ-αp = mean predicted utility (α,β are mean utility parameters)
+reg1c = reg(df1c, @formula(δjn ~ (pjn ~ x1_avg + x2_avg) + d1 + d2  + d4 + d5 + x1 + x2), Vcov.cluster(:market))
+# Predict the shares using Xβ-αp (Nevo Eq. 6)
+add_predicted_shares!(reg1c, df1c)
+# Calculate estimated own-price elasticities for each product 
+# Calculate estimated cross-price elasticity with respect to product 3.
+add_price_elasticities!(reg1c, df1c)
+
+
+
+# Average (across markets) elasticities of OLS model
+@chain df1a begin
+	groupby(:prodid)
+	combine(:ηjjn => mean => :ηjj, :ηj3n => mean => :ηj3)
+	latexify(_, fmt=FancyNumberFormatter(3))
+end
+
+# Average (across markets) elasticities of IV model
+@chain df1b begin
+	groupby(:prodid)
+	combine(:ηjjn => mean => :ηjj, :ηj3n => mean => :ηj3)
+	# rename(:ηjj => :ηⱼⱼ, :ηj3 => :ηⱼ₃)
+	latexify(_, fmt=FancyNumberFormatter(3))
+end
+
+
+# First stage cost-shift instruments of IV model
+reg1b_fs = reg(df, @formula(pjn ~ w1 + w2 + d1 + d2  + d4 + d5 + x1 + x2), Vcov.cluster(:market))
+
+# Fist stage average characteristic instruments of IV model
+reg1c_fs = reg(df1c, @formula(pjn ~ x1_avg + x2_avg + d1 + d2  + d4 + d5 + x1 + x2), Vcov.cluster(:market))
+
+repl_dict = Dict("δjn" => "\$\\delta_{jn}\$", "_avg" => "\$_{\\text{avg}}\$")
+regtable(reg1a,reg1b_ss,reg1c; renderSettings = asciiOutput(), regression_statistics = [:nobs, :r2, :f_kp], transform_labels = repl_dict)
+regtable(reg1a,reg1b_ss,reg1c; renderSettings = latexOutput("1-secondstages.tex"), regression_statistics = [:nobs, :r2, :f_kp], transform_labels = repl_dict)
+regtable(reg1b_fs,reg1c_fs; renderSettings = asciiOutput(), regression_statistics = [:nobs, :r2, :f, :f_kp], transform_labels = repl_dict)
+regtable(reg1b_fs,reg1c_fs; renderSettings = latexOutput("1-bothstages.tex"), regression_statistics = [:nobs, :r2, :f, :f_kp], transform_labels = repl_dict)
+
+regtable(reg1a,reg1b_ss,reg1c,reg1b_fs,reg1c_fs; renderSettings = asciiOutput(), regression_statistics = [:nobs, :r2, :f, :f_kp], transform_labels = repl_dict)
+regtable(reg1b_fs,reg1c_fs; renderSettings = latexOutput("1-firststages.tex"), regression_statistics = [:nobs, :r2, :f, :f_kp], transform_labels = repl_dict)
 
 
 
