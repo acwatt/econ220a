@@ -23,6 +23,9 @@ begin
 	# using JuMP, KNITRO
 end
 
+# ╔═╡ 8ae26b1f-a1fb-4a10-b1ea-d7d624529da6
+using RCall
+
 # ╔═╡ d0c264ef-6fd8-420b-8c63-dec4cd4cdf6d
 html"<span style='font-size:4em;'>Econ 220A Problem Set 2</span>"
 
@@ -96,7 +99,7 @@ md"## (d) Logit Conclusion"
 
 # ╔═╡ 37f2a06b-c93e-46a8-99fa-9f3382f662c8
 md"
-From Nevo's exposition, it seems obvious that we should favor the average-of-other-product-characteristics instrument. The issue with the cost-shifter instrument is that cost-shifters are often the same across brands. We need cost shifters that are different arcross brands, otherwise our predicted prices will all be the same in the first stage. However, examining the data, our cost shifters (presumably fuel cost and wages) are different across markets *and* brands! We can also see that we might have a weak instruments problem if we use the average characteristics as IVs.
+From Nevo's exposition, it seems obvious that we should favor the average-of-other-product-characteristics instrument. The issue with the cost-shifter instrument is that cost-shifters are often the same across brands. We need cost shifters that are different arcross brands, otherwise our predicted prices will all be the same in the first stage. However, examining the data, our cost shifters (presumably fuel cost and wages) are different across markets *and* brands! I suspect this is just because we are using simulated data and it was constructed to be have more identifying power than the average characteristics IV. We can also see that we might have a weak instruments problem if we use the average characteristics as IVs.
 
 So, I prefer the brand-market-specific cost shifters (part b) to use as IVs and present the elasticity results below.
 "
@@ -111,13 +114,13 @@ $\eta_{j3}$ = cross-price market share elasticity for product 3's price
 md"### Question 1 Functions"
 
 # ╔═╡ f603af4a-a7df-4e61-ae55-021d0a1fbf9d
-"""Create the logit dependent variable: δⱼ,ₙ = log(sjn) - log(sj0);  sj0 = outside share (1-Σsjn)"""
+"""Create the logit dependent variable: δⱼₙ = log(sⱼₙ) - log(s₀ₙ);  s₀ₙ = outside share (1-Σsⱼₙ)"""
 function add_logit_depvar!(df)
     df.δjn = @chain df begin
         groupby(:market)
-        combine(:sjn => (x -> 1-sum(x)) => :sj0)
+        combine(:sjn => (x -> 1-sum(x)) => :s0j)
         leftjoin(df, _, on = :market)
-        log.(_[!,:sjn]) - log.(_[!,:sj0])
+        log.(_[!,:sjn]) - log.(_[!,:s0j])
     end
     return df
 end
@@ -216,18 +219,6 @@ end;
 	latexify(_, fmt=FancyNumberFormatter(3))
 end
 
-# ╔═╡ 91696323-2e13-4168-9d3c-8705ef07c6d1
-# ╠═╡ disabled = true
-#=╠═╡
-"""Estimate cross-price elasticities compared to product 3; add column."""
-function add_crossprice_elasticities!(reg, df)
-    # Get price coefficient
-    αidx = findfirst(==("pjn"), reg.coefnames)
-    α = -reg.coef[αidx]
-    return df
-end
-  ╠═╡ =#
-
 # ╔═╡ 1f4fdbf0-fb2c-4333-a96b-e6bbf93fa403
 """Calculate average of other products' characteristics; add columns."""
 function add_avg_characteristics!(df)
@@ -320,19 +311,34 @@ begin
 		label("Firm 3", :S, p3)
 		label("Firm 4", :S, p4)
 		label("Firm 5", :S, p5)
-		
-		# label.(string.(["control point 1", "control point 2", "control point 3"]), :e, [pnone, p2, p3])
-		# text("hello world", halign=:center, valign=:middle)
-	    # text("A", Point(0, 0), halign=:center)
-	    # arrow(Point(0, 10), Point(0, 40), linewidth=2)
-	    # text("B", Point(0, 50), halign=:center)
 	end 10s*x 3s*y
 end
 
 # ╔═╡ 2e5a61d5-bc03-4bb7-91d0-6d5078704954
 md"## (b) Nested Logit using OLS"
 
-# ╔═╡ 8ae26b1f-a1fb-4a10-b1ea-d7d624529da6
+# ╔═╡ ac6d6e70-89d3-4ff5-b813-72ebb2d6cec1
+md"Current code development in ps2.jl. Will be moved here once working.
+
+Done:
+- Calculuate within-group share
+- Estimate α, β, σ
+- Estimate predicted within-group share, group share, and market share
+
+Current predicted market shares are wrong. Add up to more than 1, and all are either very close to 1 or very close to 0.
+
+"
+
+# ╔═╡ a69aa4a6-6e21-4bac-b17d-c2dc2e6b962e
+md"""To use R package `mlogit`: Needed to run `install.packages("mlogit")` in R terminal. Would not work from here or in Julia terminal."""
+
+# ╔═╡ 7671300e-5a0b-479e-a706-5eb05aa25bff
+
+
+# ╔═╡ 235a59d1-794d-449e-8ef6-b0ac5926fc9b
+
+
+# ╔═╡ 9377ad52-4063-4c40-8f4b-17fb598ac15d
 
 
 # ╔═╡ 2cfcaec3-eafd-40a6-858d-9576deaa0624
@@ -357,7 +363,7 @@ md"## (e) Nested Logit with IV (both)"
 md"## (f) Nested Logit Conclusion"
 
 # ╔═╡ 639d699f-25bf-4819-8bab-fcab75cad297
-
+md"Need both sets of instruments because the within group share is endogenous"
 
 # ╔═╡ 552a652c-c88a-4c71-bcc4-bc8eabad266b
 md"### Average Elasticities (IV - XXXXXXX)"
@@ -412,6 +418,7 @@ GLM = "38e38edf-8417-5370-95a0-9cbb8c7f171a"
 Latexify = "23fbe1c1-3f47-55db-b15f-69d7ec21a316"
 Luxor = "ae8d54c2-7ccd-5906-9d76-62fc9837b5bc"
 PlutoUI = "7f904dfe-b85e-4ff6-b463-dae2292396a8"
+RCall = "6f49c342-dc21-5d91-9882-a32aef131414"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
@@ -431,6 +438,7 @@ GLM = "~1.7.0"
 Latexify = "~0.15.15"
 Luxor = "~3.2.0"
 PlutoUI = "~0.7.38"
+RCall = "~0.13.13"
 StatsBase = "~0.33.16"
 StatsFuns = "~0.9.18"
 StatsModels = "~0.6.30"
@@ -591,6 +599,12 @@ version = "3.43.0"
 [[deps.CompilerSupportLibraries_jll]]
 deps = ["Artifacts", "Libdl"]
 uuid = "e66e0078-7015-5450-92f7-15fbd957f2ae"
+
+[[deps.Conda]]
+deps = ["Downloads", "JSON", "VersionParsing"]
+git-tree-sha1 = "6e47d11ea2776bc5627421d59cdcc1296c058071"
+uuid = "8f4d0f93-b110-5947-807f-2305c1781a2d"
+version = "1.7.0"
 
 [[deps.Contour]]
 deps = ["StaticArrays"]
@@ -1305,6 +1319,12 @@ git-tree-sha1 = "78aadffb3efd2155af139781b8a8df1ef279ea39"
 uuid = "1fd47b50-473d-5c70-9696-f719f8f3bcdc"
 version = "2.4.2"
 
+[[deps.RCall]]
+deps = ["CategoricalArrays", "Conda", "DataFrames", "DataStructures", "Dates", "Libdl", "Missings", "REPL", "Random", "Requires", "StatsModels", "WinReg"]
+git-tree-sha1 = "72fddd643785ec1f36581cbc3d288529b96e99a7"
+uuid = "6f49c342-dc21-5d91-9882-a32aef131414"
+version = "0.13.13"
+
 [[deps.REPL]]
 deps = ["InteractiveUtils", "Markdown", "Sockets", "Unicode"]
 uuid = "3fa0cd96-eef1-5676-8a61-b3b8758bbffb"
@@ -1543,6 +1563,11 @@ git-tree-sha1 = "b382811c8beba117f70c07a42f3f18b3075a39db"
 uuid = "ec2bfdc2-55df-4fc9-b9ae-4958c2cf2486"
 version = "0.5.0"
 
+[[deps.VersionParsing]]
+git-tree-sha1 = "58d6e80b4ee071f5efd07fda82cb9fbe17200868"
+uuid = "81def892-9a0e-5fdd-b105-ffc91e053289"
+version = "1.3.0"
+
 [[deps.Wayland_jll]]
 deps = ["Artifacts", "Expat_jll", "JLLWrappers", "Libdl", "Libffi_jll", "Pkg", "XML2_jll"]
 git-tree-sha1 = "3e61f0b86f90dacb0bc0e73a0c5a83f6a8636e23"
@@ -1566,6 +1591,12 @@ deps = ["Colors", "Dates", "Observables", "OrderedCollections"]
 git-tree-sha1 = "fcdae142c1cfc7d89de2d11e08721d0f2f86c98a"
 uuid = "cc8bc4a8-27d6-5769-a93b-9d913e69aa62"
 version = "0.6.6"
+
+[[deps.WinReg]]
+deps = ["Test"]
+git-tree-sha1 = "808380e0a0483e134081cc54150be4177959b5f4"
+uuid = "1b915085-20d7-51cf-bf83-8f477d6f5128"
+version = "0.3.1"
 
 [[deps.WoodburyMatrices]]
 deps = ["LinearAlgebra", "SparseArrays"]
@@ -1785,7 +1816,7 @@ version = "0.9.1+5"
 # ╔═╡ Cell order:
 # ╟─d0c264ef-6fd8-420b-8c63-dec4cd4cdf6d
 # ╟─2e0b3fc2-02ea-4c7f-800a-d5f0655a68f4
-# ╠═99c8a960-bf62-415a-8ca8-7313c1bea5b5
+# ╟─99c8a960-bf62-415a-8ca8-7313c1bea5b5
 # ╠═759dee93-5e1f-4fd8-80f5-c46a93f35ff1
 # ╟─9c1ea9ed-eb8c-46b8-ac3c-cbad05f00147
 # ╟─cada010e-60b8-4eab-8de0-8f89536da67d
@@ -1796,14 +1827,14 @@ version = "0.9.1+5"
 # ╟─37a6e22f-a832-447b-81a6-e720130e60ff
 # ╠═8d8614fa-4c88-4984-b8f6-29b863678f2d
 # ╟─1f8d5083-1660-4ad0-ab30-84235738a350
-# ╟─7ab92590-e8ca-4d71-976a-fec60e8c2762
+# ╠═7ab92590-e8ca-4d71-976a-fec60e8c2762
 # ╟─48ab0eb3-ee84-45c6-b95a-aed46bc9b51a
 # ╟─f67777aa-db17-415d-96e7-57a0d3a919ec
 # ╟─e549f127-48da-4999-b8b1-0254cdf46387
 # ╟─abf4985a-206c-49bb-ab93-cd684e2740fd
 # ╟─91f3e6c9-6cb7-4c53-a8cf-033ddc5346d0
 # ╟─3eb5dfc6-d1b4-4426-8191-f2f0d3f9ab09
-# ╟─788a4959-f875-48ae-8be6-f14de1f5bf0b
+# ╠═788a4959-f875-48ae-8be6-f14de1f5bf0b
 # ╟─623d6cc9-649f-49c0-a902-e198976a7abd
 # ╟─410b7689-cc78-4370-8a9c-0c39853ad136
 # ╟─37f2a06b-c93e-46a8-99fa-9f3382f662c8
@@ -1814,14 +1845,18 @@ version = "0.9.1+5"
 # ╟─95b6cb44-9123-426a-a2b2-d0547ee01dbc
 # ╟─206c151c-854a-4b11-aa7c-2623d023deb2
 # ╟─4e3c0446-8da6-4784-b5f6-11c763ad96dc
-# ╠═91696323-2e13-4168-9d3c-8705ef07c6d1
 # ╟─1f4fdbf0-fb2c-4333-a96b-e6bbf93fa403
 # ╟─c67a32ba-b701-4498-86be-14662a113e15
 # ╟─52ff7b3b-d17c-4db7-b852-c6c2e3bfa74e
 # ╟─560251c9-f35c-4e82-ae70-364dc9213fec
 # ╟─b9d8c922-803c-4d72-b384-c9eb18a69b27
 # ╟─2e5a61d5-bc03-4bb7-91d0-6d5078704954
+# ╟─ac6d6e70-89d3-4ff5-b813-72ebb2d6cec1
 # ╠═8ae26b1f-a1fb-4a10-b1ea-d7d624529da6
+# ╟─a69aa4a6-6e21-4bac-b17d-c2dc2e6b962e
+# ╠═7671300e-5a0b-479e-a706-5eb05aa25bff
+# ╠═235a59d1-794d-449e-8ef6-b0ac5926fc9b
+# ╠═9377ad52-4063-4c40-8f4b-17fb598ac15d
 # ╟─2cfcaec3-eafd-40a6-858d-9576deaa0624
 # ╠═e08ee3cb-ab67-4b36-b7be-549a00aeb732
 # ╟─33240377-e0be-4efb-809e-7dfd323567af
@@ -1829,7 +1864,7 @@ version = "0.9.1+5"
 # ╟─6cfe7887-830a-4742-b4c9-12b8ccbfb2f0
 # ╠═185ac19e-eaa6-4823-8e3f-5292f6271029
 # ╟─dd7f2c56-fc72-437e-a466-f505b7e7b61a
-# ╠═639d699f-25bf-4819-8bab-fcab75cad297
+# ╟─639d699f-25bf-4819-8bab-fcab75cad297
 # ╟─552a652c-c88a-4c71-bcc4-bc8eabad266b
 # ╟─6b5f9cfc-9530-4b07-8175-4adc48c87d76
 # ╟─b6f09745-9699-4345-ad80-5b71c40ab402
@@ -1839,7 +1874,7 @@ version = "0.9.1+5"
 # ╟─79ba563c-0792-4916-b23b-832f28e6d81d
 # ╟─04e8f596-4389-40e9-92de-5f88e993c880
 # ╟─79b95d28-3666-449b-b77d-a6fa46957e03
-# ╠═56a3faff-ba43-479c-bf19-22e49b6b0ec5
+# ╟─56a3faff-ba43-479c-bf19-22e49b6b0ec5
 # ╠═b99662e7-8669-417a-8f38-db75bc577bc2
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002

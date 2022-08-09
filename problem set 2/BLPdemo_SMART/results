@@ -1,0 +1,102 @@
+GMM objective:  14.9008
+MD R-squared:  0.22246
+MD weighted R-squared:  0.10722
+run time (minutes):  0.41432
+    mean       sigma      income   income^2    age    child
+  
+constant  
+   -1.8866    0.3772    3.0888         0    1.1859         0
+
+   (1,1)       0.2476
+   (1,2)       0.1358
+   (1,3)       1.1939
+   (1,5)       1.0194
+
+price     
+  -32.4374    1.8480   16.5980   -0.6590         0   11.6245
+
+   (1,1)       7.5809
+   (1,2)       1.0913
+   (1,3)     173.9858
+   (1,4)       9.0578
+   (1,6)       5.3098
+
+sugar     
+    0.1576   -0.0035   -0.1925         0    0.0296         0
+
+   (1,1)       0.2476
+   (1,2)       0.0129
+   (1,3)       0.0466
+   (1,5)       0.0374
+
+mushy     
+    0.9842    0.0810    1.4684         0   -1.5143         0
+
+   (1,1)       0.0132
+   (1,2)       0.2078
+   (1,3)       0.6975
+   (1,5)       1.1095
+
+         iterations: 6
+          funcCount: 7
+       cgiterations: 3
+      firstorderopt: 1.2189
+          algorithm: 'large-scale: trust-region Newton'
+            message: 'Local minimum possible.
+
+fminunc stopped because the size of the current...'
+    constrviolation: []
+
+GMM objective:  14.9008
+MD R-squared:  0.22246
+MD weighted R-squared:  0.10722
+run time (minutes):  0.40796
+    mean       sigma      income   income^2    age    child
+  
+constant  
+   -1.8866    0.3772    3.0888         0    1.1859         0
+
+   (1,1)       0.2476
+   (1,2)       0.1358
+   (1,3)       1.1939
+   (1,5)       1.0194
+
+price     
+  -32.4374    1.8480   16.5980   -0.6590         0   11.6245
+
+   (1,1)       7.5809
+   (1,2)       1.0913
+   (1,3)     173.9858
+   (1,4)       9.0578
+   (1,6)       5.3098
+
+sugar     
+    0.1576   -0.0035   -0.1925         0    0.0296         0
+
+   (1,1)       0.2476
+   (1,2)       0.0129
+   (1,3)       0.0466
+   (1,5)       0.0374
+
+mushy     
+    0.9842    0.0810    1.4684         0   -1.5143         0
+
+   (1,1)       0.0132
+   (1,2)       0.2078
+   (1,3)       0.6975
+   (1,5)       1.1095
+
+         iterations: 6
+          funcCount: 7
+       cgiterations: 3
+      firstorderopt: 1.2189
+          algorithm: 'large-scale: trust-region Newton'
+            message: 'Local minimum possible.
+
+fminunc stopped because the size of the current...'
+    constrviolation: []
+
+GMM objective:  14.9008
+MD R-squared:  0.22246
+MD weighted R-squared:  0.10722
+run time (minutes):  0.41575
