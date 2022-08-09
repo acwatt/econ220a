@@ -1655,6 +1655,10 @@ NOTE ON KNITRO SOLVER INSTALLATION
     where "path/to/knitro-XX.X.X-..." is your path. For example:
         `ENV["KNITRODIR"] = "/home/a/knitro-13.0.1-Linux-64"`
     was my path.
+--> instead of doing this in each session, you can permently add
+    KNITRODIR as an environment variable at startup by editing the
+    bashrc file. I added this line to the end of ~/.bashrc:
+        `export KNITRODIR="/home/a/knitro-13.0.1-Linux-64"`
 - Add the knitro package using
     ```julia
     julia> ]
