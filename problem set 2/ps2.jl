@@ -7,8 +7,13 @@ description: estimating model for Problem Set #2 of Econ 220A (UC Berkeley, 2022
              - ps1data.csv
 author: Aaron C Watt (UCB Grad Student, Ag & Resource Econ)
 notes:
-    - setting up problems
-    - Nevo citation: Aviv Nevo, “A Practitioner’s Guide to Estimation of Random-Coefficients Logit Models of Demand,” Journal of Economics & Management Strategy 9, no. 4 (Winter 2000): 513–48, https://doi.org/10.1162/105864000567954.
+    Moved to pluto notebook ( ps2-notebook.jl):
+    - problem 1
+    Working on in this file:
+    - problem 2
+Citations:
+    - Julia: A Fresh Approach to Numerical Computing. Jeff Bezanson, Alan Edelman, Stefan Karpinski, Viral B. Shah. (2017) SIAM Review, 59: 65–98. doi: 10.1137/141000671.
+    - Aviv Nevo, “A Practitioner’s Guide to Estimation of Random-Coefficients Logit Models of Demand,” Journal of Economics & Management Strategy 9, no. 4 (Winter 2000): 513–48, https://doi.org/10.1162/105864000567954.
 ==============================================================================#
 
 #?==============================================================================
@@ -223,6 +228,12 @@ end
 end
 
 
+
+####################################################################
+# Below are latex table outputs. These are not currenlty used,
+# because the default output in the Pluto notebook is good enough.
+# May come back to use these if not submitting the pluto notebook.
+####################################################################
 # First stage cost-shift instruments of IV model
 reg1b_fs = reg(df, @formula(pjn ~ w1 + w2 + d1 + d2  + d4 + d5 + x1 + x2), Vcov.cluster(:market))
 
