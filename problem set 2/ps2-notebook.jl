@@ -328,7 +328,9 @@ Done:
 - Estimate α, β, σ
 - Estimate predicted within-group share, group share, and market share
 
-Current predicted market shares are wrong. Add up to more than 1, and all are either very close to 1 or very close to 0.
+Current predicted market shares from `add_predicted_NL_shares!` are wrong. Add up to more than 1, and all are either very close to 1 or very close to 0.
+
+Realized that ln(sj) - ln(s0) is not delta in nested logit. 
 
 "
 
@@ -1833,7 +1835,7 @@ version = "0.9.1+5"
 # ╠═7ab92590-e8ca-4d71-976a-fec60e8c2762
 # ╟─48ab0eb3-ee84-45c6-b95a-aed46bc9b51a
 # ╟─f67777aa-db17-415d-96e7-57a0d3a919ec
-# ╟─e549f127-48da-4999-b8b1-0254cdf46387
+# ╠═e549f127-48da-4999-b8b1-0254cdf46387
 # ╟─abf4985a-206c-49bb-ab93-cd684e2740fd
 # ╠═33b0af57-fe9f-4e34-812e-8a2d16c6507f
 # ╟─91f3e6c9-6cb7-4c53-a8cf-033ddc5346d0
@@ -1843,7 +1845,7 @@ version = "0.9.1+5"
 # ╟─410b7689-cc78-4370-8a9c-0c39853ad136
 # ╟─37f2a06b-c93e-46a8-99fa-9f3382f662c8
 # ╟─a385f796-2dbf-439d-a5a5-d13fc9d0d679
-# ╟─5bbbd549-4b93-4e09-abec-2ba2c419dd39
+# ╠═5bbbd549-4b93-4e09-abec-2ba2c419dd39
 # ╟─1c4c8051-33e7-4b0c-9275-1fe9610f665c
 # ╟─f603af4a-a7df-4e61-ae55-021d0a1fbf9d
 # ╟─95b6cb44-9123-426a-a2b2-d0547ee01dbc
@@ -1855,7 +1857,7 @@ version = "0.9.1+5"
 # ╟─560251c9-f35c-4e82-ae70-364dc9213fec
 # ╟─b9d8c922-803c-4d72-b384-c9eb18a69b27
 # ╟─2e5a61d5-bc03-4bb7-91d0-6d5078704954
-# ╟─ac6d6e70-89d3-4ff5-b813-72ebb2d6cec1
+# ╠═ac6d6e70-89d3-4ff5-b813-72ebb2d6cec1
 # ╠═8ae26b1f-a1fb-4a10-b1ea-d7d624529da6
 # ╟─a69aa4a6-6e21-4bac-b17d-c2dc2e6b962e
 # ╠═7671300e-5a0b-479e-a706-5eb05aa25bff
