@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.19.9
+# v0.19.11
 
 using Markdown
 using InteractiveUtils
@@ -10,7 +10,9 @@ begin
 	using Statistics, StatsBase, StatsPlots, StatsFuns, GLM
 	using CovarianceMatrices, StatsModels, FixedEffectModels
 	# For dataframes
-	using DataFrames, CSV, DataFramesMeta, Chain
+	using DataFrames, CSV, DataFramesMeta
+	using ShiftedArrays
+	using OrderedCollections
 	# Random Variable distributions
 	using Random, Distributions
 	Random.seed!(0);
@@ -21,10 +23,7 @@ begin
 	# using Optim, NLSolversBase
 	# using LinearAlgebra: diag
 	# using JuMP, KNITRO
-end
-
-# ╔═╡ 8ae26b1f-a1fb-4a10-b1ea-d7d624529da6
-using RCall
+end;
 
 # ╔═╡ d0c264ef-6fd8-420b-8c63-dec4cd4cdf6d
 html"<span style='font-size:4em;'>Econ 220A Problem Set 2</span>"
@@ -53,8 +52,14 @@ and can be found in [this GitHub repo](https://github.com/acwatt/econ220a/tree/m
 md"
 Notes:
 - Current Status: Starting Problem 2
-- Nevo citation referenced without: \
-  Aviv Nevo, “A Practitioner’s Guide to Estimation of Random-Coefficients Logit Models of Demand,” Journal of Economics & Management Strategy 9, no. 4 (Winter 2000): 513–48, https://doi.org/10.1162/105864000567954.
+- Citations:
+    - [0] Julia: A Fresh Approach to Numerical Computing. Jeff Bezanson, Alan Edelman, Stefan Karpinski, Viral B. Shah. (2017) SIAM Review, 59: 65–98. doi: 10.1137/141000671.
+    - [1] Steven T. Berry, “Estimating Discrete-Choice Models of Product Differentiation,” The RAND Journal of Economics, 1994, 242–62.
+    - [2] Aviv Nevo, “A Practitioner’s Guide to Estimation of Random-Coefficients Logit Models of Demand,” Journal of Economics & Management Strategy 9, no. 4 (Winter 2000): 513–48, https://doi.org/10.1162/105864000567954.
+    - [3] Daniel A Ackerberg and Gregory S Crawford, “Estimating Price Elasticities in Diﬀerentiated Product Demand Models with Endogenous Characteristics,” Working Paper, 2009.
+    - [4] Ackerberg and Crawford, “Estimating Price Elasticities in Diﬀerentiated Product Demand Models with Endogenous Characteristics.” (2009) Working Paper
+    - [5] Kenneth E Train, Discrete Choice Methods with Simulation, 2nd ed., 2009.
+  
 "
 
 # ╔═╡ cada010e-60b8-4eab-8de0-8f89536da67d
@@ -69,8 +74,18 @@ md"# QUESTION 1: LOGIT"
 # ╔═╡ 37a6e22f-a832-447b-81a6-e720130e60ff
 md"## (a) Logit using OLS"
 
+# ╔═╡ 2d54f004-edc0-4abf-ba74-7d7fc1043617
+md"Own and cross-price elasticities $\eta_{jk}$ are calculated below for the simple Conditional Logit model. Cross-price elasticities are estimated only compared to product 3. These elasticities are estimated from observed market price $p_j$, estimated market shares $\hat s_j$, and estimated marginal utility of income $\hat\alpha$ using the following formula from Nevo 2001 (pg. 522): \
+$\hat\eta_{jk} = 
+	\dfrac{\partial s_j}{\partial p_k}\dfrac{p_k}{s_j} =
+\begin{cases}
+  -\hat\alpha p_k (1-\hat s_j)  & \text{ if } j=k, \\
+  \hat\alpha p_k \hat s_k & \text{ otherwise.}
+\end{cases}$
+"
+
 # ╔═╡ 1f8d5083-1660-4ad0-ab30-84235738a350
-md"### Average (across markets) Elasticities
+md"### Average (across markets) Elasticities for OLS
  $\eta_{jj}$ = own-price market share elasticity\
 $\eta_{j3}$ = cross-price market share elasticity for product 3's price
 "
@@ -81,9 +96,11 @@ md"## (b) Logit with IV (cost shifters)"
 # ╔═╡ f67777aa-db17-415d-96e7-57a0d3a919ec
 md"**First stage regression: prices on cost-shifters and other explanatory variables**\
 We will use the instrumented price to estimate $\alpha$ in the regression of mean utility $\delta$ on prices and product characteristics.
-\
-\
-We can see from the first stage results below that the F statistics is 131, well above the rule of thumb of an F statistic of >10. So these instruments are jointly significant in predicting prices. For reference, the F statistic from the regression of just prices on the cost shifters is above 300.
+"
+
+# ╔═╡ ca857157-c86f-4963-ad7a-1caddd467441
+md"**IV regression: average utility on product characteristics using cost-shifters as instruments for price**\
+We can see from the IV table that first stage F statistics is 433, well above the rule of thumb of an F statistic of >10. So these instruments are jointly significant in predicting prices. For reference, the F statistic from the regression of just prices on the cost shifters is above 300.
 "
 
 # ╔═╡ 91f3e6c9-6cb7-4c53-a8cf-033ddc5346d0
@@ -91,7 +108,11 @@ md"## (c) Logit with IV (average characteristics)"
 
 # ╔═╡ 3eb5dfc6-d1b4-4426-8191-f2f0d3f9ab09
 md"**First stage regression: prices on average other-product characteristics and other explanatory variables**\
-In this first stage (below), the F statistic is well below 10 (5.45). This indicates we have weak instruments.
+"
+
+# ╔═╡ ba671e65-826b-4942-b407-fb01762026dc
+md"**IV regression: average utility on product characteristics with average other-product characteristics as instruments for price**\
+Below, we can see that the first-stage F statistic is well below 10 (1.13). This indicates we have weak instruments.
 "
 
 # ╔═╡ 410b7689-cc78-4370-8a9c-0c39853ad136
@@ -111,30 +132,17 @@ $\eta_{j3}$ = cross-price market share elasticity for product 3's price
 "
 
 # ╔═╡ 1c4c8051-33e7-4b0c-9275-1fe9610f665c
-md"### Question 1 Functions"
+md"## Question 1 Functions"
 
 # ╔═╡ f603af4a-a7df-4e61-ae55-021d0a1fbf9d
-"""Create the logit dependent variable: δⱼₙ = log(sⱼₙ) - log(s₀ₙ);  s₀ₙ = outside share (1-Σsⱼₙ)"""
+"""Create the logit dependent variable: δⱼ,ₙ = log(sjn) - log(sj0);  sj0 = outside share (1-Σsjn)"""
 function add_logit_depvar!(df)
-    df.δjn = @chain df begin
+    @chain df begin
         groupby(:market)
-        combine(:sjn => (x -> 1-sum(x)) => :s0j)
-        leftjoin(df, _, on = :market)
-        log.(_[!,:sjn]) - log.(_[!,:s0j])
+        @transform!(:sj0 = 1 .- sum(:sjn))
+        @transform!(:δjn = log.(:sjn) .- log.(:sj0))
     end
-    return df
 end
-
-# ╔═╡ 44c5f655-e059-462b-8afc-386c10bbe7de
-begin
-	# Load data
-	df = DataFrame(CSV.File(string(dirname(@__FILE__), "/ps1data.csv")));
-	# Add δ (mean utility levels)
-	add_logit_depvar!(df)
-end;
-
-# ╔═╡ e549f127-48da-4999-b8b1-0254cdf46387
-reg1b_fs = reg(df, @formula(pjn ~ w1 + w2 + d1 + d2  + d4 + d5 + x1 + x2), Vcov.cluster(:market))
 
 # ╔═╡ 95b6cb44-9123-426a-a2b2-d0547ee01dbc
 """Logit share -probability function; Nevo Eq. (6)"""
@@ -155,17 +163,36 @@ function add_predicted_shares!(reg, df_)
     return df_
 end
 
-# ╔═╡ 4e3c0446-8da6-4784-b5f6-11c763ad96dc
-"""Estimate own-price and cross-price elasticities of the predicted market shares; add columns.
+# ╔═╡ 1f4fdbf0-fb2c-4333-a96b-e6bbf93fa403
+"""Calculate average of other products' characteristics; add columns."""
+function add_avg_characteristics!(df)
+	@chain df begin
+		groupby(:market)
+		# Avg of other products for j = ((sum of all) - (product j)) / 4
+		combine(:x1 => (x -> (sum(x) .- x) ./ 4) => :x1a,
+				:x2 => (x -> (sum(x) .- x) ./ 4) => :x2a)
+		insertcols!(df, :x1_avg => _.x1a, :x2_avg => _.x2a) 
+	end
+end
 
-Only adds cross-price elasticities relative to product 3.
-ηjjn and ηj3n
+# ╔═╡ 9cdce6c5-e001-4e5a-8975-fc11fe5d3b34
+"""Return coefficient from regression for variable var"""
+function get_coef(reg, var)
+    idx = findfirst(==(var), reg.coefnames)
+    return reg.coef[idx]
+end
+
+# ╔═╡ 4e3c0446-8da6-4784-b5f6-11c763ad96dc
+"""Estimate own-price and cross-price elasticities of the predicted market shares for Conditional Logit; add columns.
+
+Only adds cross-price elasticities relative to product 3 (ηjjn and ηj3n).
+Uses elasticity equation from Nevo (2000) pg 522.
+Need to use the predicted market share (̂sⱼₙ = Xβ)
 """
 function add_price_elasticities!(reg, df)
 	sort!(df, [:market, :prodid])
     # Get price coefficient
-    αidx = findfirst(==("pjn"), reg.coefnames)
-    α = -reg.coef[αidx]
+    α = -get_coef(reg, "pjn")
     df.ηjjn = -α * df.pjn .* (1 .- df.sjn_hat)
     df.ηj3n = @chain df begin
         filter(:prodid => ==(3), _)
@@ -177,6 +204,29 @@ function add_price_elasticities!(reg, df)
 	end
     return df
 end
+
+# ╔═╡ c1e64762-2357-4104-89d4-0df3a62cb5e6
+"""Create the within-nest share variable ̄sⱼₕ"""
+function add_ingroup_share!(df)
+    # Add group identifier (problem 2)
+    group_dict = Dict(1=>1, 2=>2, 3=>2, 4=>3, 5=>3)
+    # Calculate in-group share within each market-group
+    @chain df begin
+        @transform!(:group = get.(Ref(group_dict), :prodid, missing))
+        groupby([:market, :group])
+        @transform!(:sjhn = :sjn ./ sum(:sjn))
+    end
+end
+
+# ╔═╡ 44c5f655-e059-462b-8afc-386c10bbe7de
+begin
+	# Load data
+	df = DataFrame(CSV.File(string(dirname(@__FILE__), "/ps1data.csv")));
+	# Add δ (mean utility levels)
+	add_logit_depvar!(df)
+	# Add within group-market shares ̄sⱼₕ
+	df = add_ingroup_share!(df)
+end;
 
 # ╔═╡ 8d8614fa-4c88-4984-b8f6-29b863678f2d
 begin
@@ -197,6 +247,9 @@ end;
 	combine(:ηjjn => mean => :ηjj, :ηj3n => mean => :ηj3)
 	latexify(_, fmt=FancyNumberFormatter(3))
 end
+
+# ╔═╡ e549f127-48da-4999-b8b1-0254cdf46387
+reg1b_fs = reg(df, @formula(pjn ~ w1 + w2 + d1 + d2  + d4 + d5 + x1 + x2), Vcov.cluster(:market))
 
 # ╔═╡ abf4985a-206c-49bb-ab93-cd684e2740fd
 begin
@@ -222,18 +275,6 @@ reg1b_ss
 	latexify(_, fmt=FancyNumberFormatter(3))
 end
 
-# ╔═╡ 1f4fdbf0-fb2c-4333-a96b-e6bbf93fa403
-"""Calculate average of other products' characteristics; add columns."""
-function add_avg_characteristics!(df)
-	@chain df begin
-		groupby(:market)
-		# Avg of other products for j = ((sum of all) - (product j)) / 4
-		combine(:x1 => (x -> (sum(x) .- x) ./ 4) => :x1a,
-				:x2 => (x -> (sum(x) .- x) ./ 4) => :x2a)
-		insertcols!(df, :x1_avg => _.x1a, :x2_avg => _.x2a) 
-	end
-end
-
 # ╔═╡ 623d6cc9-649f-49c0-a902-e198976a7abd
 begin
 	df1c = copy(df)
@@ -247,7 +288,8 @@ begin
 	# Calculate estimated own-price elasticities for each product 
 	# Calculate estimated cross-price elasticity with respect to product 3.
 	add_price_elasticities!(reg1c, df1c)
-end;
+	reg1c
+end
 
 # ╔═╡ 788a4959-f875-48ae-8be6-f14de1f5bf0b
 reg1c_fs = reg(df1c, @formula(pjn ~ x1_avg + x2_avg + d1 + d2  + d4 + d5 + x1 + x2), Vcov.cluster(:market))
@@ -320,64 +362,488 @@ end
 # ╔═╡ 2e5a61d5-bc03-4bb7-91d0-6d5078704954
 md"## (b) Nested Logit using OLS"
 
-# ╔═╡ ac6d6e70-89d3-4ff5-b813-72ebb2d6cec1
-md"Current code development in ps2.jl. Will be moved here once working.
+# ╔═╡ f6bc30a5-f0a2-49a8-8a80-d84fa98cb745
+md"
+Linear estimating equation for Nested Logit from Berry 1994, Eq 28 (pg 253):\
+$\ln(s_j) - ln(s_0) = x_j\beta - \alpha p_j + \sigma\ln(\bar s_{j|g}) + \xi_j$
 
-Done:
-- Calculuate within-group share
-- Estimate α, β, σ
-- Estimate predicted within-group share, group share, and market share
-
-Current predicted market shares from `add_predicted_NL_shares!` are wrong. Add up to more than 1, and all are either very close to 1 or very close to 0.
-
-Realized that ln(sj) - ln(s0) is not delta in nested logit. 
-
+From regressing $[\ln(s_j) - ln(s_0)]$ on $x_j, p_j, \ln(\bar s_{j|g})$, we obtain estimates of $\alpha, \beta, \sigma$ to use in estimating the predicted market shares, predicted within-nest market shares, and eventually the elasticities.
 "
 
-# ╔═╡ a69aa4a6-6e21-4bac-b17d-c2dc2e6b962e
-md"""To use R package `mlogit`: Needed to run `install.packages("mlogit")` in R terminal. Would not work from here or in Julia terminal."""
-
 # ╔═╡ 7671300e-5a0b-479e-a706-5eb05aa25bff
+md"
+These Nested Logit elasticities are estimated from observed market price $p_j$, estimated market shares $\hat s_j$, estimated within-nest market share $\hat s_{j|g}$, estimated marginal utility of income $\hat\alpha$, and estimated nest substituion parameter $\hat\sigma$ using the following formula from Ackerberg and Crawford 2009 (pg. 15): \
+$\hat\eta_{jk} = 
+	\dfrac{\partial s_j}{\partial p_k}\dfrac{p_k}{s_j} =
+\begin{cases}
+  -\hat\alpha p_k (\frac{1}{1-\hat\sigma}
+	-\frac{\hat\sigma}{1-\hat\sigma}\hat s_{j|g}
+	-\hat s_j)  & \text{ if } j=k, \\
+  \hat\alpha\hat s_k p_k 
+	(\frac{\hat\sigma}{1-\hat\sigma}\frac{\hat s_{j|g}}{\hat s_j}
+	+ 1)  & \text{ if }j\neq k \text{ but }j \text{ and } k \text{ in same nest}, \\
+  \hat\alpha\hat s_k p_k & \text{ otherwise}
+\end{cases}$
+"
 
-
-# ╔═╡ 235a59d1-794d-449e-8ef6-b0ac5926fc9b
-
-
-# ╔═╡ 9377ad52-4063-4c40-8f4b-17fb598ac15d
-
+# ╔═╡ d6793ff1-921e-4e19-99f6-8b54b6711067
+md"### Average (across markets) Nested Logit Elasticities for OLS
+ $\eta_{jj}$ = own-price market share elasticity\
+$\eta_{j3}$ = cross-price market share elasticity for product 3's price
+"
 
 # ╔═╡ 2cfcaec3-eafd-40a6-858d-9576deaa0624
 md"## (c) Nested Logit with IV (cost shifters)"
 
 # ╔═╡ e08ee3cb-ab67-4b36-b7be-549a00aeb732
+md"**First stage regression: prices on cost-shifters and other explanatory variables**\
+We will use the instrumented price to estimate $\alpha$ in the regression of $\ln(s_j) - ln(s_0)$ on prices and product characteristics.
+\
+\
+We can see from the IV table that first stage F statistics is 508, well above the rule of thumb of an F statistic of >10. So these instruments are jointly significant in predicting prices.
+"
 
+# ╔═╡ e9f6b112-67d8-4ada-b85b-f7dbe1a17616
+md"First-stage regression for prices"
+
+# ╔═╡ 023c4a02-fbbd-498e-b876-bdfee6602c6d
+md"First-stage regression for $ln(s_{j|h})$"
 
 # ╔═╡ 33240377-e0be-4efb-809e-7dfd323567af
 md"## (d) Nested Logit with IV (average characteristics)"
 
-# ╔═╡ 842a7876-bb98-4577-a427-29273b850554
+# ╔═╡ 22bb71e3-9115-4830-91b1-3a77e482587c
+md"**First stage regression: prices on average in-nest other-product characteristics and other explanatory variables**\
+"
 
+# ╔═╡ 00da05ae-f658-4845-9057-334bcc51feb5
+md"**First stage regression: $ln(s_{j|h})$ on average in-nest other-product characteristics and other explanatory variables**\
+"
 
 # ╔═╡ 6cfe7887-830a-4742-b4c9-12b8ccbfb2f0
 md"## (e) Nested Logit with IV (both)"
 
-# ╔═╡ 185ac19e-eaa6-4823-8e3f-5292f6271029
+# ╔═╡ cd1a11b7-4817-4dec-9b9d-c879929cb228
+md"Instrumental Variables (IV) with with both cost-shifters and within-group average of rivals' characteristics as instruments."
+
+# ╔═╡ 8a0bc819-5c2f-49b9-90ad-502aeec85652
+md"**First stage regression: prices on average in-nest other-product characteristics _and_ cost shifters and other explanatory variables**\
+"
+
+# ╔═╡ 2407037f-4b0a-40e8-8175-a79157374c2f
+md"**First stage regression: $ln(s_{j|h})$ on average in-nest other-product characteristics _and_ cost shifters and other explanatory variables**\
+"
+
+# ╔═╡ 293fe2ee-83e9-46af-b044-49cbaf8fe321
+
+
+# ╔═╡ 9857a81b-2fdd-4b65-9d66-f61eb82e5c61
 
 
 # ╔═╡ dd7f2c56-fc72-437e-a466-f505b7e7b61a
 md"## (f) Nested Logit Conclusion"
 
 # ╔═╡ 639d699f-25bf-4819-8bab-fcab75cad297
-md"Need both sets of instruments because the within group share is endogenous"
+md"From the 2SLS results in the above parts, we can see that the marginal utiltiy of income ($-\hat\alpha$) in part (d) is negative. This seems unlikely and makes me think that the average in-nest other-product characteristics are poor instruments for price. This makes me doubt if they should be used at all as instruments. However, the F-stat for the first stage of part (d) is much larger than for part (c), but still much less than 10.
+
+The F-stat for the combined 4 instruments (part e, both average characteristics and cost shifters), is larger than for just the average characteristics IV, and $-\hat\alpha$ from the 4-instrument case is significantly negative. Also, of the IV specifications, the combined IV is the only estimation that has an estimate for $\hat\sigma$ between 0 and 1. So even though it appears there are not any reliable IV results from the Nested Logit model, if I had to pick, I would choose the combined 4-instrument IV."
 
 # ╔═╡ 552a652c-c88a-4c71-bcc4-bc8eabad266b
-md"### Average Elasticities (IV - XXXXXXX)"
+md"### Average Elasticities (IV - both cost-shifters and average characteristics)"
+
+# ╔═╡ 51db87ce-8aea-48ee-95d7-851226b298e6
+md"Note that the cross-price elasticity w.r.t. product 3 is much higher for the product that shares the nest (product 2). This makes sense because the model is assuming that product 2 and 3 are good substitutes, but we should keep in mind that this elasticity is artificially higher because of model assumptions, not necessarily because products 2 and 3 are empirically the closest substitutes."
+
+# ╔═╡ bbdd7403-74b8-4b06-a7bc-f59402f6c425
+md"## Question 2 Functions"
+
+# ╔═╡ a6fdb66e-b681-472b-a997-9d59f3ff7587
+"""Create the new observed δ analog from BLP Eq. 27: δⱼ(s,σ) = ln(sⱼ) - σ ln(̄sⱼₕ) - ln(s₀)"""
+function add_mean_utility_NL!(df::DataFrame, σ::Real)
+    # Calculate analytic mean utility from observed shares and estimated σ
+    @chain df begin
+        groupby(:market)
+        @transform!(:δ_obs = log.(:sjn) .- σ*log.(:sjhn) - log.(:sj0))
+    end
+end
+
+# ╔═╡ f6f1449a-5ccd-482c-971f-86e4da901f64
+"""Create the new predicted δ from below BLP Eq. 27: δ = xⱼβ -αpⱼ"""
+function add_mean_utility_NL!(df::DataFrame, reg::FixedEffectModel)
+    # Calculate predicted mean utility from observed characteristics and estimated β,α
+    df.δ_hat = @chain df begin
+        @transform(:sjhn = 1) # so log(sjhn) = 0, removed σ⋅log(sⱼₕₙ) from prediction
+        predict(reg, _)
+    end
+end
+
+# ╔═╡ 3d208fe0-7be6-4571-a770-f2fd08ea9359
+"""Estimate Nested Logit in-group share denominator Dₕ (BLP Eq 23).
+    Dₕ = ∑(j∈Jₕ) exp(δⱼ / (1-σ))
+    requires δ_hat = X'β  in df
+"""
+function add_group_denominator_NL!(df, σ)
+    @chain df begin
+        groupby([:market, :group])
+        @transform!(:Dh = sum(exp.(:δ_hat / (1-σ))))
+    end
+end
+
+# ╔═╡ 3d6e9571-552d-4c7b-b6a6-9b6a290b37c9
+"""Estimate Nested Logit group share denominator ∑ₕ Dₕ (BLP Eq 24).
+    `D_sum` = ∑ₕ Dₕ in each market. 
+    Requires `δ_hat` = X'β  in df
+"""
+function add_market_demoninator_NL!(df, σ)
+    @chain df begin
+        groupby(:market)
+        @combine(:D_sum = sum(:Dh.^(1-σ)))
+        @select(:market, :D_sum)
+        leftjoin!(df, _, on=:market)
+    end
+end
+
+# ╔═╡ c14344a5-3b9a-43a5-a4b2-0cff5731ba5e
+"""Estimate Nested Logit predicted in-group share (BLP Eq 23).
+    sⱼ|ₕ = exp(δⱼ / (1-σ)) / Dₕ.
+    Requires δ_hat = X'β  in df
+"""
+function add_ingroup_share_NL!(df, σ)
+    @chain df begin
+        groupby(:market)
+        @transform!(:sjhn_hat = exp.(:δ_hat / (1-σ)) ./ :Dh)
+    end
+end
+
+# ╔═╡ fa2926e4-7b34-48de-bc46-44c81239b5c2
+"""Estimate Nested Logit predicted market share (BLP Eq 25).
+    sⱼ = exp(δⱼ / (1-σ)) / (Dₕ^σ * D_sum).
+    Requires δ_hat = X'β  in df
+"""
+function add_market_share_NL!(df, σ)
+    @chain df begin
+        groupby(:market)
+        @transform!(:sjn_hat = exp.(:δ_hat / (1-σ)) ./ (:Dh.^σ .* :D_sum))
+    end
+end
+
+
+# ╔═╡ af8e7b74-4fdc-495a-a8c8-7f59d6c3c371
+"""Expand prices and market shares for product 3 to all rows to help with elasticity computation"""
+function add_product3_price_and_shares!(df)
+    @chain df begin
+        @subset(:prodid .== 3)
+        rename(:sjn_hat => :s3n_hat, :pjn => :p3n)  # Creates a new dataframe
+        @select(:market, :s3n_hat, :p3n)
+        leftjoin!(df, _, on=:market)        # merge just :s3n and :p3n onto orginal dataframe
+    end
+end
+
+# ╔═╡ d0b52f17-d3c2-4226-a9f1-ed9333e630ca
+md"
+Cross- and own-price derivatives from [4], pg 15: (suppressing the market subscript)
+```
+∂sⱼ/∂pₖ = -α sⱼ (1/(1-σ) - σ/(1-σ)*sⱼ|ₕ - sⱼ)  if j = k (same product) \
+        =   α sₖ (σ/(1-σ)*sⱼ|ₕ + sⱼ)            if j & k in same nest \
+        =   α sₖ sⱼ                             otherwise \
+    ηⱼₖ = ∂sⱼ/∂pₖ * pₖ / sⱼ
+        = -α pₖ (1/(1-σ) - σ/(1-σ)*sⱼ|ₕ - sⱼ)      if j = k (same product)
+        =   α sₖ (σ/(1-σ) * sⱼ|ₕ * pₖ / sⱼ + pₖ)    if j & k in same nest
+        =   α sₖ pₖ                                otherwise
+```
+Need to use the predicted market share ̂sⱼₙ(δ_hat) BLP Eq 25
+"
+
+# ╔═╡ 91f6d08c-8ad8-4da5-a0cb-b02b4678cefa
+"""Return Nested Logit cross-price elasticity w.r.t. product 3; checks if in same nest as product 3. Uses price derivatives from [4], pg 15. Need to use the predicted market share ̂sⱼₙ(δ_hat) BLP Eq 25.
+"""
+function cross_price_elasticity_NL(α, σ, p3, s3, sjh, sj, productID, nestID)
+    if productID == 3  # do not want to return own-price elasticity
+        return missing
+    elseif nestID == 2  # product 3 is in next 2: return in-nest cross price elasticity
+        return α*s3*p3 * (σ/(1-σ) * sjh/sj + 1)
+    else
+        return α*s3*p3
+    end
+end
+
+# ╔═╡ c9b3f41f-532a-4ba7-946e-6d17ccace25d
+"""Return Nested Logit own-price elasticity"""
+own_price_elasticity_NL(α, σ, pj, sjh, sj) = -α*pj * (1/(1-σ)  - σ/(1-σ)*sjh - sj)
+
+# ╔═╡ 02e95b1f-e350-4353-abb3-716f78a05294
+"""Estimate own-price and cross-price elasticities of the predicted market shares for Nested Logit; add columns.
+    Only adds cross-price elasticities relative to product 3.
+    ηjjn and ηj3n
+    Requires that p3 (price of product 3) and s3 (market share of product 3) be added as new columns.
+"""
+function add_price_elasticities_NL!(reg, df)
+	sort!(df, [:market, :prodid])
+    # Get coefficients
+    α = -get_coef(reg, "pjn")
+    σ = get_coef(reg, "log(sjhn)")
+    @chain df begin
+        @transform!(:ηj3n = cross_price_elasticity_NL.(α, σ, :p3n, :s3n_hat, :sjhn_hat, :sjn_hat, :prodid, :group))
+        @transform!(:ηjjn = own_price_elasticity_NL.(α, σ, :pjn, :sjhn_hat, :sjn_hat))
+    end
+end
+
+# ╔═╡ 057949f4-5546-48ff-8440-d3b719466752
+function report_avg_price_elasticities(df)
+    @chain df begin
+        groupby(:prodid)
+        @combine(:ηjj = mean(:ηjjn), :ηj3 = mean(:ηj3n))
+        latexify(fmt=FancyNumberFormatter(3))
+    end
+end
+
+# ╔═╡ 9c6c758a-e784-49a9-892f-b4e8ea3d277c
+""""Add 'average' in-nest in-market other-product characteristics.
+    Because there is at most 2 products in each market-nest, this 'average'
+    is just the product characteristic value of the other product in the nest.
+"""
+function add_avg_characteristics_NL!(df)
+    @chain df begin
+        # groupby market and nest: results in list of dataframes with one or two rows
+        groupby([:market, :group])
+        # In dataframe with two rows, the average characteristic of the other row (the other product)
+        # is retrieved by circularly shifting the characteristics down one row
+        # (so the top row moves down one and the bottom row moves to the top)
+        @transform!(:x1_avg = ShiftedArrays.circshift(:x1, 1))
+        @transform!(:x2_avg = ShiftedArrays.circshift(:x2, 1))
+        # If product is in nest 1, replace with 0
+        @transform!(:x1_avg = ifelse.(:group .== 1, 0, :x1_avg))
+        @transform!(:x2_avg = ifelse.(:group .== 1, 0, :x2_avg))
+    end
+end
+
+
+
+
+# ╔═╡ 26fa40ef-f003-40bc-a3ff-d64e041184d1
+"""Add estimated marginal costs to dataframe.
+    Requires the own-price elasticity :ηjjn column.
+"""
+add_marginal_costs_NL!(df) = @transform!(df, :mc = :pjn .* (1 .+ 1 ./ :ηjjn))
+
+
+# ╔═╡ ac7e93d1-2471-40a3-a4a3-33ac2f6a4c93
+"""Return Nested Logit price elasticities using dataframe and BLP Eq 28 regression results."""
+function estimate_price_elasticities_NL!(df, reg)
+    # Create the new observed δ analog from BLP Eq. 27: δⱼ(s,σ) = ln(sⱼ) - σ ln(̄sⱼₕ) - ln(s₀)
+    σ = get_coef(reg, "log(sjhn)")
+    add_mean_utility_NL!(df, σ)  # adds δ_obs
+    # Create predicted δ: δⱼ = xⱼβ - αpⱼ (removing the σ ln(̄sⱼₕ) term)
+    add_mean_utility_NL!(df, reg) # adds δ_hat
+
+    # Predict the market and within group shares using predicted δ, σ (using α,β,σ in Nevo Eq's 23, 24, 25)
+    # We need predicted market shares to calculate elasticities
+    add_group_denominator_NL!(df, σ)
+    add_market_demoninator_NL!(df, σ)
+    add_ingroup_share_NL!(df, σ)
+    add_market_share_NL!(df, σ)
+
+    # Calculate estimated own-price elasticities for each product 
+    # Calculate estimated cross-price elasticity with respect to product 3.
+    add_product3_price_and_shares!(df)
+    add_price_elasticities_NL!(reg, df)
+    # Calculate marginal costs
+    add_marginal_costs_NL!(df)
+
+    # Report average price elasticities across markets
+    report_avg_price_elasticities(df)
+end
+
+# ╔═╡ 235a59d1-794d-449e-8ef6-b0ac5926fc9b
+begin
+	# The group, and in-group share variables are created in question 1 functions
+	df2 = copy(df)
+	# We keep the same dependent variable ln(sⱼ)-ln(s₀), but we need to call it something else
+	# In Nested Logit, ln(sⱼ)-ln(s₀) = δ + σ ln(̄sⱼₕ)
+	# Change the name of the dependent variable from δ to ln sⱼs₀ = ln(sⱼ)-ln(s₀)
+	rename!(df2, :δjn => :lnsjs0)
+	df2b = copy(df2)
+	# Regress ln(sⱼ)-ln(s₀) on X and ln(̄sⱼₕ) to estimate α,β,σ that minimizes error term ( BLP Eq 28)
+	reg2b = reg(df2b, @formula(lnsjs0 ~ pjn + log(sjhn) + d1 + d2  + d4 + d5 + x1 + x2), Vcov.cluster(:market))
+	# Calculate own and cross-price elasticities
+	estimate_price_elasticities_NL!(df2b, reg2b)
+end
+
+# ╔═╡ 9377ad52-4063-4c40-8f4b-17fb598ac15d
+md"""From this regression, the estimated coefficient of within-group market shares is $(round(get_coef(reg2b, "log(sjhn)"), digits=4)), which is between 0 and 1, so this is at least a plausibl estimate of $$\hat\sigma$$. As Ken Train puts it, "If [the nest correlation coefficient] is between zero and one, the model is consistent with utility maximization for all possible values of the explanatory variables." (pg. 81)"""
+
+# ╔═╡ 185ac19e-eaa6-4823-8e3f-5292f6271029
+begin
+	df2e = copy(df2)
+	add_avg_characteristics_NL!(df2e)
+	
+	# Regress ln(sⱼ)-ln(s₀) on X and ln(̄sⱼₕ) to estimate α,β,σ that minimizes error term (BLP Eq 28)
+	reg2e_fs1 = reg(df2e, @formula(pjn ~ w1 + w2 + x1_avg + x2_avg + d1 + d2  + d4 + d5 + x1 + x2), Vcov.cluster(:market))
+	reg2e_fs2 = reg(df2e, @formula(log(sjhn) ~ w1 + w2 + x1_avg + x2_avg + d1 + d2  + d4 + d5 + x1 + x2), Vcov.cluster(:market))
+	reg2e_ss = reg(df2e, @formula(lnsjs0 ~ (pjn + log(sjhn) ~ w1 + w2 + x1_avg + x2_avg) + d1 + d2  + d4 + d5 + x1 + x2), Vcov.cluster(:market))
+	# Calculate own and cross-price elasticities
+	# estimate_price_elasticities_NL!(df2e, reg2e_ss)
+	# This is shown in part f below
+end;
+
+# ╔═╡ df3aa3cf-5887-4032-b417-0ebd574d950c
+reg2e_fs1
+
+# ╔═╡ 3784b300-72fc-4fb3-be11-672493c2997e
+reg2e_fs2
+
+# ╔═╡ 7c4a379f-b7c2-4810-a6ae-a97e153f1324
+md"""**IV regression: $\ln(s_j) - ln(s_0)$ on product characteristics with average in-nest other-product characteristics _and_ cost shifters as instruments for price**\
+Below, we can see that the first-stage F statistic is well below 10 (2.25). This indicates we have weak instruments.
+
+
+From this regression, the estimated coefficient of within-group market shares is $(round(get_coef(reg2e_ss, "log(sjhn)"), digits=4)), which is between 0 and 1, so this is at least a plausible estimate of $$\hat\sigma$$. As Ken Train puts it, "If [the nest correlation coefficient] is between zero and one, the model is consistent with utility maximization for all possible values of the explanatory variables." (pg. 81)
+"""
+
+# ╔═╡ d40277d3-b7f9-4fbc-8f08-2bb6a4c0d4ad
+reg2e_ss
+
+# ╔═╡ 52fd25ae-965e-4e53-85da-6701a64354c6
+begin
+	df2c = copy(df2)
+	# Regress ln(sⱼ)-ln(s₀) on X and ln(̄sⱼₕ) to estimate α,β,σ that minimizes error term (BLP Eq 28)
+	reg2c_fs1 = reg(df2c, @formula(pjn ~ w1 + w2 + d1 + d2  + d4 + d5 + x1 + x2), Vcov.cluster(:market))
+	reg2c_fs2 = reg(df2c, @formula(log(sjhn) ~ w1 + w2 + d1 + d2  + d4 + d5 + x1 + x2), Vcov.cluster(:market))
+	reg2c_ss = reg(df2c, @formula(lnsjs0 ~ (pjn + log(sjhn) ~ w1 + w2) + d1 + d2  + d4 + d5 + x1 + x2), Vcov.cluster(:market))
+	# Calculate own and cross-price elasticities
+	estimate_price_elasticities_NL!(df2c, reg2c_ss)
+end;
+
+# ╔═╡ 4fd6cf9f-d864-4ca8-a3b1-ac654c4969fb
+reg2c_fs1
+
+# ╔═╡ 69fe323a-8863-457b-997f-33b6935991ee
+reg2c_fs2
+
+# ╔═╡ 5a85fbfd-23a6-47fa-9e7c-129e62c581df
+md"""**IV regression: $\ln(s_j) - ln(s_0)$ on product characteristics using cost-shifters as instruments for price**\
+We can see from the IV table that first stage F statistics is 0.13, well below the rule of thumb of an F statistic of >10. So these are weak instruments!
+
+From this regression, the estimated coefficient of within-group market shares is $(round(get_coef(reg2c_ss, "log(sjhn)"), digits=4)), which is greater than one, so this might not be plausible for $$\hat\sigma$$. As Ken Train puts it, "For [nest correlation coefficient values] greater than one, the model is consistent with utility-maximizing behavior for some range of the explanatory variables but not for all values." (pg. 81)
+"""
+
+# ╔═╡ 959f1fcf-8856-4395-bb30-41d8ce2f37de
+reg2c_ss
+
+# ╔═╡ 842a7876-bb98-4577-a427-29273b850554
+begin
+	df2d = copy(df2)
+	
+	# Add the instruments: average other-nest product characteristics
+	add_avg_characteristics_NL!(df2d)
+	
+	# Regress ln(sⱼ)-ln(s₀) on X and ln(̄sⱼₕ) to estimate α,β,σ that minimizes error term (BLP Eq 28)
+	reg2d_fs1 = reg(df2d, @formula(pjn ~ x1_avg + x2_avg + d1 + d2  + d4 + d5 + x1 + x2), Vcov.cluster(:market))
+	reg2d_fs2 = reg(df2d, @formula(log(sjhn) ~ x1_avg + x2_avg + d1 + d2  + d4 + d5 + x1 + x2), Vcov.cluster(:market))
+	reg2d_ss = reg(df2d, @formula(lnsjs0 ~ (pjn + log(sjhn) ~ x1_avg + x2_avg) + d1 + d2  + d4 + d5 + x1 + x2), Vcov.cluster(:market))
+	# Calculate own and cross-price elasticities
+	estimate_price_elasticities_NL!(df2d, reg2d_ss)
+end;
+
+# ╔═╡ 0a68f24b-eb68-46d0-8d9a-a6fe1dd78c0e
+reg2d_fs1
+
+# ╔═╡ df51a15e-68f1-4466-940f-3e9c07bdf5f6
+reg2d_fs2
+
+# ╔═╡ edcc6f78-2a6a-42df-984a-1b28ee2e4801
+md"""**IV regression: $\ln(s_j) - ln(s_0)$ on product characteristics with average in-nest other-product characteristics as instruments for price**\
+Below, we can see that the first-stage F statistic is well below 10 (1.08). This indicates we have weak instruments.
+
+
+From this regression, the estimated coefficient of within-group market shares is $(round(get_coef(reg2d_ss, "log(sjhn)"), digits=4)), which is negative, so this doesn't seem plausible for $$\hat\sigma$$. As Ken Train puts it, "A negative value
+of [the nest correlation coefficient] is inconsistent with utility maximization and implies that improving the attributes of an alternative (such as lowering its price) can decrease the probability of the alternative being chosen." (pg. 81)
+"""
+
+# ╔═╡ 9e5e2d9b-2f3d-4bae-9bd1-86d7ea7cf9c3
+reg2d_ss
+
+# ╔═╡ e70be4ea-29d0-4d24-8208-2d562bbad5d3
+# Calculate own and cross-price elasticities
+estimate_price_elasticities_NL!(df2e, reg2e_ss)
 
 # ╔═╡ 6b5f9cfc-9530-4b07-8175-4adc48c87d76
 html"<br><br><br><br><br><br><br><br>"
 
 # ╔═╡ b6f09745-9699-4345-ad80-5b71c40ab402
 md"# QUESTION 3: MARGINAL COSTS"
+
+# ╔═╡ 61de6d27-093c-4798-bb62-93f5bd15887c
+md"Current code development in ps2.jl. Will be moved here once working.
+
+Need to:
+- figure out how to estimate marginal costs...
+
+See ps2.jl
+"
+
+# ╔═╡ ed73f930-0d7c-4c46-82a9-a10a30d949cf
+md"""
+From Berry (1994), we know that in the oligopoly setting, where firms choose their price assuming prices of other products remain constant, that the estimable part of marginal cost is
+
+$\widetilde{MC}_j = p_j\left(1 + \dfrac{1}{\eta_{jj}}\right), \quad \eta_{jj}=\dfrac{\partial s_j}{\partial p_j}\dfrac{p_j}{s_j}$
+
+So using our demand-side estimates of $\eta_{jj}$ for the four Nested Logit models above, I have estimated the marginal costs for each product in each market. The proportion (across observations) of marginal costs that are negative for each product in each model is below.
+"""
+
+# ╔═╡ 787f80b6-5293-4777-996a-a3a8a63b7e8c
+md"""
+In the table above, "MC<0\_x" columns show the share of observations from estimate (x) that were negative, and "MC>p\_x" columns show the share of observations from estimate (x) that were above the price of the product. We see that marginal costs from parts (d) and (e) seem to be the most reasonable based on few or no observations that have negative marginal costs. But part (d) also has marginal cost estimates that are above price because the own-price elasticity estimates were positive (this results from the estimate of α from that part being negative). So part (e) seems to be the most reasonable estimate because it has both few negative marginal costs and no marginal costs above price. Part (b) also seems reasonable but likely suffers from endogeneity of prices and within-nest share.
+
+One missing part from these analyses is standard errors, which would tell us if these MC estimates were significantly negative or above price. If we look at the OLS Nested Logit results from part (b), we can see the average marginal cost estimate for the observations that have a negative estimate is only -\$2.61, compared to an average positive marginal cost of \$14 (See below table). It is possible that many of the observations that have negative marginal costs are not significantly different from a small positive number.
+
+Because the formula for marginal costs is 
+$\widetilde{MC}_j = p_j\left(1 + \dfrac{1}{\eta_{jj}}\right)$, 
+a mechanical reason that marginal costs would be negative is that the own-price elasticity is between 0 and -1 (inelastic). If $\eta_{jj}\in (-1,0)$ then $(1 + \frac{1}{\eta_{jj}}) < 0$ and marginal cost would be negative. This seems to be implied by the model: if I face a very inelastic demand, then the models says I should be charging a markup even larger than the market price. This is probably due to the assumption that the firms are independent oligopolies and take each other's prices as given, when really there may be some form of collusion or are price takers perhaps.
+"""
+
+# ╔═╡ 9ecfd7bd-ecab-40af-bbde-6359295cae44
+md"**Average marginal costs from estimate (b), separately for positive and negative marginal costs**"
+
+# ╔═╡ 0af72537-c22d-4909-b7a6-58b35fa4ba99
+@chain df2b begin
+    @transform($("MC > 0") = :mc .> 0)
+    groupby(Symbol("MC > 0"))
+    @combine($("Average Price") = mean(:mc))
+    latexify(fmt=FancyNumberFormatter(3))
+end
+
+# ╔═╡ 2ca237f9-ea8e-499e-8e79-b0e6ef286808
+"""Return vector of shares of marginal cost estimates that are negative, by product."""
+function get_share_neg(df)
+    @chain df begin
+        groupby(:prodid)
+        @combine(:share_neg = sum(:mc .< 0) / length(:mc))
+        _.share_neg
+    end
+end
+
+# ╔═╡ 8d59a25b-f4aa-48fb-9bac-aff90a856030
+"""Return vector of shares of marginal cost estimates that are above price, by product."""
+function get_share_above_price(df)
+    @chain df begin
+        groupby(:prodid)
+        @combine(:share_above_p = sum(:mc .> :pjn) / length(:mc))
+        _.share_above_p
+    end
+end
+
+# ╔═╡ 05dda9bf-3f66-4ce2-a3d5-88dbbe3ba6ef
+begin
+	mc_df = DataFrame(prodid = 1:5)
+	df_dict = OrderedDict("b" => df2b, "c" => df2c, "d" => df2d, "e" => df2e)
+	
+	for (part, d) ∈ df_dict
+	    @transform!(mc_df, $("MC<0_"*part) = get_share_neg(d),
+			$("MC>p_"*part) = get_share_above_price(d))
+	end
+	latexify(mc_df, fmt=FancyNumberFormatter(3))
+end
 
 # ╔═╡ 308984fd-cc90-4940-987d-984d3421fba0
 html"<br><br><br><br><br><br><br><br>"
@@ -413,7 +879,6 @@ TableOfContents()
 PLUTO_PROJECT_TOML_CONTENTS = """
 [deps]
 CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
-Chain = "8be319e6-bccf-4806-a6f7-6fae938471bc"
 CovarianceMatrices = "60f91f6f-d783-54cb-84f9-544141854719"
 DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
 DataFramesMeta = "1313f7d8-7da2-5740-9ea0-a2ca25f37964"
@@ -422,9 +887,10 @@ FixedEffectModels = "9d5cd8c9-2029-5cab-9928-427838db53e3"
 GLM = "38e38edf-8417-5370-95a0-9cbb8c7f171a"
 Latexify = "23fbe1c1-3f47-55db-b15f-69d7ec21a316"
 Luxor = "ae8d54c2-7ccd-5906-9d76-62fc9837b5bc"
+OrderedCollections = "bac558e1-5e72-5ebc-8fee-abe8a469f55d"
 PlutoUI = "7f904dfe-b85e-4ff6-b463-dae2292396a8"
-RCall = "6f49c342-dc21-5d91-9882-a32aef131414"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+ShiftedArrays = "1277b4bf-5013-50f5-be3d-901d8477a67a"
 Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
 StatsFuns = "4c63d2b9-4356-54db-8cca-17b64c39e42c"
@@ -433,7 +899,6 @@ StatsPlots = "f3b207a7-027a-5e70-b257-86293d7955fd"
 
 [compat]
 CSV = "~0.10.4"
-Chain = "~0.4.10"
 CovarianceMatrices = "~0.10.4"
 DataFrames = "~1.3.4"
 DataFramesMeta = "~0.11.0"
@@ -442,8 +907,9 @@ FixedEffectModels = "~1.6.5"
 GLM = "~1.7.0"
 Latexify = "~0.15.15"
 Luxor = "~3.2.0"
+OrderedCollections = "~1.4.1"
 PlutoUI = "~0.7.38"
-RCall = "~0.13.13"
+ShiftedArrays = "~1.0.0"
 StatsBase = "~0.33.16"
 StatsFuns = "~0.9.18"
 StatsModels = "~0.6.30"
@@ -604,12 +1070,6 @@ version = "3.43.0"
 [[deps.CompilerSupportLibraries_jll]]
 deps = ["Artifacts", "Libdl"]
 uuid = "e66e0078-7015-5450-92f7-15fbd957f2ae"
-
-[[deps.Conda]]
-deps = ["Downloads", "JSON", "VersionParsing"]
-git-tree-sha1 = "6e47d11ea2776bc5627421d59cdcc1296c058071"
-uuid = "8f4d0f93-b110-5947-807f-2305c1781a2d"
-version = "1.7.0"
 
 [[deps.Contour]]
 deps = ["StaticArrays"]
@@ -1324,12 +1784,6 @@ git-tree-sha1 = "78aadffb3efd2155af139781b8a8df1ef279ea39"
 uuid = "1fd47b50-473d-5c70-9696-f719f8f3bcdc"
 version = "2.4.2"
 
-[[deps.RCall]]
-deps = ["CategoricalArrays", "Conda", "DataFrames", "DataStructures", "Dates", "Libdl", "Missings", "REPL", "Random", "Requires", "StatsModels", "WinReg"]
-git-tree-sha1 = "72fddd643785ec1f36581cbc3d288529b96e99a7"
-uuid = "6f49c342-dc21-5d91-9882-a32aef131414"
-version = "0.13.13"
-
 [[deps.REPL]]
 deps = ["InteractiveUtils", "Markdown", "Sockets", "Unicode"]
 uuid = "3fa0cd96-eef1-5676-8a61-b3b8758bbffb"
@@ -1568,11 +2022,6 @@ git-tree-sha1 = "b382811c8beba117f70c07a42f3f18b3075a39db"
 uuid = "ec2bfdc2-55df-4fc9-b9ae-4958c2cf2486"
 version = "0.5.0"
 
-[[deps.VersionParsing]]
-git-tree-sha1 = "58d6e80b4ee071f5efd07fda82cb9fbe17200868"
-uuid = "81def892-9a0e-5fdd-b105-ffc91e053289"
-version = "1.3.0"
-
 [[deps.Wayland_jll]]
 deps = ["Artifacts", "Expat_jll", "JLLWrappers", "Libdl", "Libffi_jll", "Pkg", "XML2_jll"]
 git-tree-sha1 = "3e61f0b86f90dacb0bc0e73a0c5a83f6a8636e23"
@@ -1596,12 +2045,6 @@ deps = ["Colors", "Dates", "Observables", "OrderedCollections"]
 git-tree-sha1 = "fcdae142c1cfc7d89de2d11e08721d0f2f86c98a"
 uuid = "cc8bc4a8-27d6-5769-a93b-9d913e69aa62"
 version = "0.6.6"
-
-[[deps.WinReg]]
-deps = ["Test"]
-git-tree-sha1 = "808380e0a0483e134081cc54150be4177959b5f4"
-uuid = "1b915085-20d7-51cf-bf83-8f477d6f5128"
-version = "0.3.1"
 
 [[deps.WoodburyMatrices]]
 deps = ["LinearAlgebra", "SparseArrays"]
@@ -1830,17 +2273,20 @@ version = "0.9.1+5"
 # ╠═44c5f655-e059-462b-8afc-386c10bbe7de
 # ╟─3b88301b-f77c-484e-9137-cf53c2668e47
 # ╟─37a6e22f-a832-447b-81a6-e720130e60ff
-# ╠═8d8614fa-4c88-4984-b8f6-29b863678f2d
+# ╟─8d8614fa-4c88-4984-b8f6-29b863678f2d
+# ╟─2d54f004-edc0-4abf-ba74-7d7fc1043617
 # ╟─1f8d5083-1660-4ad0-ab30-84235738a350
 # ╠═7ab92590-e8ca-4d71-976a-fec60e8c2762
 # ╟─48ab0eb3-ee84-45c6-b95a-aed46bc9b51a
 # ╟─f67777aa-db17-415d-96e7-57a0d3a919ec
-# ╠═e549f127-48da-4999-b8b1-0254cdf46387
+# ╟─e549f127-48da-4999-b8b1-0254cdf46387
 # ╟─abf4985a-206c-49bb-ab93-cd684e2740fd
-# ╠═33b0af57-fe9f-4e34-812e-8a2d16c6507f
+# ╟─ca857157-c86f-4963-ad7a-1caddd467441
+# ╟─33b0af57-fe9f-4e34-812e-8a2d16c6507f
 # ╟─91f3e6c9-6cb7-4c53-a8cf-033ddc5346d0
 # ╟─3eb5dfc6-d1b4-4426-8191-f2f0d3f9ab09
-# ╠═788a4959-f875-48ae-8be6-f14de1f5bf0b
+# ╟─788a4959-f875-48ae-8be6-f14de1f5bf0b
+# ╟─ba671e65-826b-4942-b407-fb01762026dc
 # ╟─623d6cc9-649f-49c0-a902-e198976a7abd
 # ╟─410b7689-cc78-4370-8a9c-0c39853ad136
 # ╟─37f2a06b-c93e-46a8-99fa-9f3382f662c8
@@ -1852,28 +2298,77 @@ version = "0.9.1+5"
 # ╟─206c151c-854a-4b11-aa7c-2623d023deb2
 # ╟─4e3c0446-8da6-4784-b5f6-11c763ad96dc
 # ╟─1f4fdbf0-fb2c-4333-a96b-e6bbf93fa403
+# ╟─9cdce6c5-e001-4e5a-8975-fc11fe5d3b34
+# ╟─c1e64762-2357-4104-89d4-0df3a62cb5e6
 # ╟─c67a32ba-b701-4498-86be-14662a113e15
 # ╟─52ff7b3b-d17c-4db7-b852-c6c2e3bfa74e
 # ╟─560251c9-f35c-4e82-ae70-364dc9213fec
 # ╟─b9d8c922-803c-4d72-b384-c9eb18a69b27
 # ╟─2e5a61d5-bc03-4bb7-91d0-6d5078704954
-# ╠═ac6d6e70-89d3-4ff5-b813-72ebb2d6cec1
-# ╠═8ae26b1f-a1fb-4a10-b1ea-d7d624529da6
-# ╟─a69aa4a6-6e21-4bac-b17d-c2dc2e6b962e
-# ╠═7671300e-5a0b-479e-a706-5eb05aa25bff
-# ╠═235a59d1-794d-449e-8ef6-b0ac5926fc9b
-# ╠═9377ad52-4063-4c40-8f4b-17fb598ac15d
+# ╟─f6bc30a5-f0a2-49a8-8a80-d84fa98cb745
+# ╟─9377ad52-4063-4c40-8f4b-17fb598ac15d
+# ╟─7671300e-5a0b-479e-a706-5eb05aa25bff
+# ╟─d6793ff1-921e-4e19-99f6-8b54b6711067
+# ╟─235a59d1-794d-449e-8ef6-b0ac5926fc9b
 # ╟─2cfcaec3-eafd-40a6-858d-9576deaa0624
-# ╠═e08ee3cb-ab67-4b36-b7be-549a00aeb732
+# ╟─e08ee3cb-ab67-4b36-b7be-549a00aeb732
+# ╟─52fd25ae-965e-4e53-85da-6701a64354c6
+# ╟─e9f6b112-67d8-4ada-b85b-f7dbe1a17616
+# ╟─4fd6cf9f-d864-4ca8-a3b1-ac654c4969fb
+# ╟─023c4a02-fbbd-498e-b876-bdfee6602c6d
+# ╟─69fe323a-8863-457b-997f-33b6935991ee
+# ╟─5a85fbfd-23a6-47fa-9e7c-129e62c581df
+# ╟─959f1fcf-8856-4395-bb30-41d8ce2f37de
 # ╟─33240377-e0be-4efb-809e-7dfd323567af
-# ╠═842a7876-bb98-4577-a427-29273b850554
+# ╟─842a7876-bb98-4577-a427-29273b850554
+# ╟─22bb71e3-9115-4830-91b1-3a77e482587c
+# ╟─0a68f24b-eb68-46d0-8d9a-a6fe1dd78c0e
+# ╟─00da05ae-f658-4845-9057-334bcc51feb5
+# ╟─df51a15e-68f1-4466-940f-3e9c07bdf5f6
+# ╟─edcc6f78-2a6a-42df-984a-1b28ee2e4801
+# ╟─9e5e2d9b-2f3d-4bae-9bd1-86d7ea7cf9c3
 # ╟─6cfe7887-830a-4742-b4c9-12b8ccbfb2f0
+# ╟─cd1a11b7-4817-4dec-9b9d-c879929cb228
 # ╠═185ac19e-eaa6-4823-8e3f-5292f6271029
+# ╟─8a0bc819-5c2f-49b9-90ad-502aeec85652
+# ╟─df3aa3cf-5887-4032-b417-0ebd574d950c
+# ╟─2407037f-4b0a-40e8-8175-a79157374c2f
+# ╟─3784b300-72fc-4fb3-be11-672493c2997e
+# ╟─7c4a379f-b7c2-4810-a6ae-a97e153f1324
+# ╟─d40277d3-b7f9-4fbc-8f08-2bb6a4c0d4ad
+# ╠═293fe2ee-83e9-46af-b044-49cbaf8fe321
+# ╠═9857a81b-2fdd-4b65-9d66-f61eb82e5c61
 # ╟─dd7f2c56-fc72-437e-a466-f505b7e7b61a
 # ╟─639d699f-25bf-4819-8bab-fcab75cad297
 # ╟─552a652c-c88a-4c71-bcc4-bc8eabad266b
+# ╟─e70be4ea-29d0-4d24-8208-2d562bbad5d3
+# ╟─51db87ce-8aea-48ee-95d7-851226b298e6
+# ╟─bbdd7403-74b8-4b06-a7bc-f59402f6c425
+# ╟─a6fdb66e-b681-472b-a997-9d59f3ff7587
+# ╟─f6f1449a-5ccd-482c-971f-86e4da901f64
+# ╟─3d208fe0-7be6-4571-a770-f2fd08ea9359
+# ╟─3d6e9571-552d-4c7b-b6a6-9b6a290b37c9
+# ╟─c14344a5-3b9a-43a5-a4b2-0cff5731ba5e
+# ╟─fa2926e4-7b34-48de-bc46-44c81239b5c2
+# ╟─af8e7b74-4fdc-495a-a8c8-7f59d6c3c371
+# ╟─d0b52f17-d3c2-4226-a9f1-ed9333e630ca
+# ╟─91f6d08c-8ad8-4da5-a0cb-b02b4678cefa
+# ╟─c9b3f41f-532a-4ba7-946e-6d17ccace25d
+# ╟─02e95b1f-e350-4353-abb3-716f78a05294
+# ╟─057949f4-5546-48ff-8440-d3b719466752
+# ╟─ac7e93d1-2471-40a3-a4a3-33ac2f6a4c93
+# ╟─9c6c758a-e784-49a9-892f-b4e8ea3d277c
+# ╟─26fa40ef-f003-40bc-a3ff-d64e041184d1
 # ╟─6b5f9cfc-9530-4b07-8175-4adc48c87d76
 # ╟─b6f09745-9699-4345-ad80-5b71c40ab402
+# ╠═61de6d27-093c-4798-bb62-93f5bd15887c
+# ╟─ed73f930-0d7c-4c46-82a9-a10a30d949cf
+# ╠═05dda9bf-3f66-4ce2-a3d5-88dbbe3ba6ef
+# ╟─787f80b6-5293-4777-996a-a3a8a63b7e8c
+# ╟─9ecfd7bd-ecab-40af-bbde-6359295cae44
+# ╟─0af72537-c22d-4909-b7a6-58b35fa4ba99
+# ╟─2ca237f9-ea8e-499e-8e79-b0e6ef286808
+# ╟─8d59a25b-f4aa-48fb-9bac-aff90a856030
 # ╟─308984fd-cc90-4940-987d-984d3421fba0
 # ╟─f6ea7896-47a0-4763-8b5d-47e2bb4b68f9
 # ╟─1068fde5-e5c2-40ba-b654-f18bb861f329

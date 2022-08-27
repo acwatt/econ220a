@@ -28,6 +28,8 @@ using Statistics, StatsBase, StatsPlots, StatsFuns, GLM
 using CovarianceMatrices, StatsModels, FixedEffectModels
 # For dataframes
 using DataFrames, CSV, DataFramesMeta
+using ShiftedArrays
+using OrderedCollections
 # Random Variable distributions
 using Random, Distributions
 Random.seed!(0);
@@ -154,16 +156,14 @@ end
 
 
 
-
-
-
-#*#############################################################################
-#*####################### QUESTION 1 WORK #####################################
-
 # Add δ (mean utility levels)
 df = add_logit_depvar!(df)
 # Add within group-market shares ̄sⱼₕ
 df = add_ingroup_share!(df)
+
+
+#*#############################################################################
+#*####################### QUESTION 1 WORK #####################################
 
 
 #!############ PART A
@@ -480,8 +480,7 @@ end
 
 
 """Return Nested Logit price elasticities using dataframe and BLP Eq 28 regression results."""
-function estimate_price_elasticities_NL(df_, reg)
-    df = copy(df_)
+function estimate_price_elasticities_NL!(df, reg)
     # Create the new observed δ analog from BLP Eq. 27: δⱼ(s,σ) = ln(sⱼ) - σ ln(̄sⱼₕ) - ln(s₀)
     σ = get_coef(reg, "log(sjhn)")
     add_mean_utility_NL!(df, σ)  # adds δ_obs
@@ -499,11 +498,38 @@ function estimate_price_elasticities_NL(df_, reg)
     # Calculate estimated cross-price elasticity with respect to product 3.
     add_product3_price_and_shares!(df)
     add_price_elasticities_NL!(reg, df)
+    # Calculate marginal costs
+    add_marginal_costs_NL!(df)
 
     # Report average price elasticities across markets
     report_avg_price_elasticities(df)
 end
 
+
+""""Add 'average' in-nest in-market other-product characteristics.
+    Because there is at most 2 products in each market-nest, this 'average'
+    is just the product characteristic value of the other product in the nest.
+"""
+function add_avg_characteristics_NL!(df)
+    @chain df begin
+        # groupby market and nest: results in list of dataframes with one or two rows
+        groupby([:market, :group])
+        # In dataframe with two rows, the average characteristic of the other row (the other product)
+        # is retrieved by circularly shifting the characteristics down one row
+        # (so the top row moves down one and the bottom row moves to the top)
+        @transform!(:x1_avg = ShiftedArrays.circshift(:x1, 1))
+        @transform!(:x2_avg = ShiftedArrays.circshift(:x2, 1))
+        # If product is in nest 1, replace with 0
+        @transform!(:x1_avg = ifelse.(:group .== 1, 0, :x1_avg))
+        @transform!(:x2_avg = ifelse.(:group .== 1, 0, :x2_avg))
+    end
+end
+
+
+"""Add estimated marginal costs to dataframe.
+    Requires the own-price elasticity :ηjjn column.
+"""
+add_marginal_costs_NL!(df) = @transform!(df, :mc = :pjn .* (1 .+ 1 ./ :ηjjn))
 
 
 
@@ -524,15 +550,16 @@ end
 =#
 
 # The group, and in-group share variables are created in question 1 functions
-df2b = copy(df)
+df2 = copy(df)
 # We keep the same dependent variable ln(sⱼ)-ln(s₀), but we need to call it something else
 # In Nested Logit, ln(sⱼ)-ln(s₀) = δ + σ ln(̄sⱼₕ)
 # Change the name of the dependent variable from δ to ln sⱼs₀ = ln(sⱼ)-ln(s₀)
-rename!(df2b, :δjn => :lnsjs0)
+rename!(df2, :δjn => :lnsjs0)
+df2b = copy(df2)
 # Regress ln(sⱼ)-ln(s₀) on X and ln(̄sⱼₕ) to estimate α,β,σ that minimizes error term ( BLP Eq 28)
 reg2b = reg(df2b, @formula(lnsjs0 ~ pjn + log(sjhn) + d1 + d2  + d4 + d5 + x1 + x2), Vcov.cluster(:market))
 # Calculate own and cross-price elasticities
-estimate_price_elasticities_NL(df2b, reg2b)
+estimate_price_elasticities_NL!(df2b, reg2b)
 
 
 
@@ -552,13 +579,13 @@ estimate_price_elasticities_NL(df2b, reg2b)
         Beta note: β = beta in this font (depends on the IDE used to read this file)
 =#
 
-df2c = copy(df2b)
+df2c = copy(df2)
 # Regress ln(sⱼ)-ln(s₀) on X and ln(̄sⱼₕ) to estimate α,β,σ that minimizes error term (BLP Eq 28)
-reg2c_fs = reg(df2c, @formula(pjn ~ w1 + w2 + log(sjhn) + d1 + d2  + d4 + d5 + x1 + x2), Vcov.cluster(:market))
-reg2c_ss = reg(df2c, @formula(lnsjs0 ~ (pjn ~ w1 + w2) + log(sjhn) + d1 + d2  + d4 + d5 + x1 + x2), Vcov.cluster(:market))
+reg2c_fs1 = reg(df2c, @formula(pjn ~ w1 + w2 + d1 + d2  + d4 + d5 + x1 + x2), Vcov.cluster(:market))
+reg2c_fs2 = reg(df2c, @formula(log(sjhn) ~ w1 + w2 + d1 + d2  + d4 + d5 + x1 + x2), Vcov.cluster(:market))
+reg2c_ss = reg(df2c, @formula(lnsjs0 ~ (pjn + log(sjhn) ~ w1 + w2) + d1 + d2  + d4 + d5 + x1 + x2), Vcov.cluster(:market))
 # Calculate own and cross-price elasticities
-estimate_price_elasticities_NL(df2c, reg2c_ss)
-# Report both first stage regressions, for pⱼ and ln(̄sⱼₕ)
+estimate_price_elasticities_NL!(df2c, reg2c_ss)
 
 
 
@@ -567,33 +594,66 @@ estimate_price_elasticities_NL(df2c, reg2c_ss)
 
 
 
-#!#####################################################################################################################
-#!              NEXT
-#!#####################################################################################################################
-#=
-- correct all statements about first stage F stat to the f stat reported in the IV output
-- finish part c
-=#
 
 
 #!############ PART D
 #! Instrumental Variables (IV) with average of characteristics of other products within the group
-#=
+#= From the problem set instructions:
 You will have to create this set of instruments from the raw
 data. Note the average x1 for product 2 is just the x1
 for product 3 (and vice versa). There is no average other
 characteristic for product 1 as it is in its own group, so just
 give it a value of 0.
-
-gropuby(:market)
-
-if :prodid .== 1
-    return 0
-elseif :prodid .== 2
-    return $var
-
-Not sure how to get e.g. prod 3 x1 for prod 2... maybe need to google "vertical lookup"?
 =#
+df2d = copy(df2)
+
+# Add the instruments: average other-nest product characteristics
+add_avg_characteristics_NL!(df2d)
+
+# Regress ln(sⱼ)-ln(s₀) on X and ln(̄sⱼₕ) to estimate α,β,σ that minimizes error term (BLP Eq 28)
+reg2d_fs1 = reg(df2d, @formula(pjn ~ x1_avg + x2_avg + d1 + d2  + d4 + d5 + x1 + x2), Vcov.cluster(:market))
+reg2d_fs2 = reg(df2d, @formula(log(sjhn) ~ x1_avg + x2_avg + d1 + d2  + d4 + d5 + x1 + x2), Vcov.cluster(:market))
+reg2d_ss = reg(df2d, @formula(lnsjs0 ~ (pjn + log(sjhn) ~ x1_avg + x2_avg) + d1 + d2  + d4 + d5 + x1 + x2), Vcov.cluster(:market))
+# Calculate own and cross-price elasticities
+estimate_price_elasticities_NL!(df2d, reg2d_ss)
+
+
+
+
+#!############ PART E
+#! Instrumental Variables (IV) with with both cost-shifters and 
+#! within-group average of rivals' characteristics as in-struments.
+df2e = copy(df2)
+add_avg_characteristics_NL!(df2e)
+
+# Regress ln(sⱼ)-ln(s₀) on X and ln(̄sⱼₕ) to estimate α,β,σ that minimizes error term (BLP Eq 28)
+reg2e_fs1 = reg(df2e, @formula(pjn ~ w1 + w2 + x1_avg + x2_avg + d1 + d2  + d4 + d5 + x1 + x2), Vcov.cluster(:market))
+reg2e_fs2 = reg(df2e, @formula(log(sjhn) ~ w1 + w2 + x1_avg + x2_avg + d1 + d2  + d4 + d5 + x1 + x2), Vcov.cluster(:market))
+reg2e_ss = reg(df2e, @formula(lnsjs0 ~ (pjn + log(sjhn) ~ w1 + w2 + x1_avg + x2_avg) + d1 + d2  + d4 + d5 + x1 + x2), Vcov.cluster(:market))
+# Calculate own and cross-price elasticities
+estimate_price_elasticities_NL!(df2e, reg2e_ss)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -607,8 +667,56 @@ Not sure how to get e.g. prod 3 x1 for prod 2... maybe need to google "vertical 
 #?==============================================================================
 #?==============================================================================
 #?==============================================================================
+#=
+Berry 1994: MC ≈ pⱼ * (1 + 1 / ηjj)
+
+- need to estimate marginal costs for each product in each market for all 4 nested logit Models
+--> Added to problem 2 functions so MC are estimated right after share elasticities
+- need to calculate % of MC that are <0 for each product in each model
+- need to combine these in to single dataframe and latexify
+=#
+"""Return vector of shares of marginal cost estimates that are negative, by product."""
+function get_share_neg(df)
+    @chain df begin
+        groupby(:prodid)
+        @combine(:share_neg = sum(:mc .< 0) / length(:mc))
+        _.share_neg
+    end
+end
 
 
+"""Return vector of shares of marginal cost estimates that are above price, by product."""
+function get_share_above_price(df)
+    @chain df begin
+        groupby(:prodid)
+        @combine(:share_above_p = sum(:mc .> :pjn) / length(:mc))
+        _.share_above_p
+    end
+end
+
+
+mc_df = DataFrame(prodid = 1:5)
+df_dict = OrderedDict("b" => df2b, "c" => df2c, "d" => df2d, "e" => df2e)
+
+for (part, d) ∈ df_dict
+    @transform!(mc_df, $("MC<0_"*part) = get_share_neg(d), $("MC>p_"*part) = get_share_above_price(d))
+end
+latexify(mc_df, fmt=FancyNumberFormatter(3))
+
+@chain df2b begin
+    @transform(:posMC = :mc .> 0)
+    groupby(:posMC)
+    @combine(:avg_p = mean(:mc))
+    latexify(fmt=FancyNumberFormatter(3))
+end
+
+#!#####################################################################################################################
+#!              NEXT
+#!#####################################################################################################################
+#=
+
+
+=#
 
 
 
@@ -762,6 +870,7 @@ summary(nl3)
 
 # Example 1: create 
 d = DataFrame(A=1:8, j=repeat(1:4,2), t=repeat(1:2, inner=4), g=repeat(1:2, inner=2, outer=2))
+push!(d,     [9,     5,               1,                      3])
 @chain d begin
     groupby([:t, :g])
     @combine :D_mean = mean(:A)
@@ -772,8 +881,22 @@ d = DataFrame(A=1:8, j=repeat(1:4,2), t=repeat(1:2, inner=4), g=repeat(1:2, inne
     leftjoin!(d, _, on=:t)
 end
 @chain d groupby([:t, :g]) @transform!(:D_mean = mean(:A))
-@chain d 
 
+
+d = DataFrame(A=1:8, j=repeat(1:4,2), t=repeat(1:2, inner=4), g=repeat(1:2, inner=2, outer=2))
+push!(d,     [9,     5,               1,                      3])
+using ShiftedArrays
+@chain d begin
+    # groupby market and nest: results in list of dataframes with one or two rows
+    groupby([:t, :g])
+    # In dataframe with two rows, the average characteristic of the other row (the other product)
+    # is retrieved by circularly shifting the characteristics down one row
+    # (so the top row moves down one and the bottom row moves to the top)
+    @transform!(:x = ShiftedArrays.circshift(:A, 1))
+    @aside(println("After Shift, before replacing group 3\n", _))
+    # If product is in nest 1, replace with 0
+    @transform!(:x = ifelse.(:g .== 1, 0, :x))
+end
 
 
 
@@ -812,7 +935,7 @@ print(summary(m2))
 
 
 
-
+"""To use R package `mlogit`: Needed to run `install.packages("mlogit")` in R terminal. Would not work from here or in Julia terminal."""
 
 
 
