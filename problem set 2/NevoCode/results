@@ -25,3 +25,111 @@ MD R-squared:  0.45909
 MD weighted R-squared:  0.10117
 # of objective function evaluations:  139
 run time (minutes):  0.14658
+    mean       sigma      income   income^2    age    child
+  
+constant  
+   -2.0100    0.5581    2.2920         0    1.2846         0
+
+    0.3270    0.1625    1.2086         0    0.6313         0
+
+price     
+  -62.7295    3.3127  588.3266  -30.1921         0   11.0552
+
+   14.8033    1.3403  270.4437   14.1014         0    4.1227
+
+sugar     
+    0.1163   -0.0058   -0.3849         0    0.0522         0
+
+    0.3270    0.0135    0.1215         0    0.0260         0
+
+mushy     
+    0.4995    0.0934    0.7482         0   -1.3536         0
+
+    0.0160    0.1854    0.8022         0    0.6672         0
+
+GMM objective:  4.5615
+MD R-squared:  0.45909
+MD weighted R-squared:  0.10117
+# of objective function evaluations:  139
+run time (minutes):  0.072755
+    mean       sigma      income   income^2    age    child
+  
+constant  
+   -2.0100    0.5581    2.2920         0    1.2846         0
+
+    0.3270    0.1625    1.2086         0    0.6313         0
+
+price     
+  -62.7295    3.3127  588.3266  -30.1921         0   11.0552
+
+   14.8033    1.3403  270.4437   14.1014         0    4.1227
+
+sugar     
+    0.1163   -0.0058   -0.3849         0    0.0522         0
+
+    0.3270    0.0135    0.1215         0    0.0260         0
+
+mushy     
+    0.4995    0.0934    0.7482         0   -1.3536         0
+
+    0.0160    0.1854    0.8022         0    0.6672         0
+
+GMM objective:  4.5615
+MD R-squared:  0.45909
+MD weighted R-squared:  0.10117
+# of objective function evaluations:  139
+run time (minutes):  0.070588
+    mean       sigma      income   income^2    age    child
+  
+constant  
+   -2.0100    0.5581    2.2920         0    1.2846         0
+
+    0.3270    0.1625    1.2086         0    0.6313         0
+
+price     
+  -62.7295    3.3127  588.3266  -30.1921         0   11.0552
+
+   14.8033    1.3403  270.4437   14.1014         0    4.1227
+
+sugar     
+    0.1163   -0.0058   -0.3849         0    0.0522         0
+
+    0.3270    0.0135    0.1215         0    0.0260         0
+
+mushy     
+    0.4995    0.0934    0.7482         0   -1.3536         0
+
+    0.0160    0.1854    0.8022         0    0.6672         0
+
+GMM objective:  4.5615
+MD R-squared:  0.45909
+MD weighted R-squared:  0.10117
+# of objective function evaluations:  139
+run time (minutes):  0.070723
+    mean       sigma      income   income^2    age    child
+  
+constant  
+   -2.0100    0.5581    2.2920         0    1.2846         0
+
+    0.3270    0.1625    1.2086         0    0.6313         0
+
+price     
+  -62.7295    3.3127  588.3266  -30.1921         0   11.0552
+
+   14.8033    1.3403  270.4437   14.1014         0    4.1227
+
+sugar     
+    0.1163   -0.0058   -0.3849         0    0.0522         0
+
+    0.3270    0.0135    0.1215         0    0.0260         0
+
+mushy     
+    0.4995    0.0934    0.7482         0   -1.3536         0
+
+    0.0160    0.1854    0.8022         0    0.6672         0
+
+GMM objective:  4.5615
+MD R-squared:  0.45909
+MD weighted R-squared:  0.10117
+# of objective function evaluations:  139
+run time (minutes):  0.068389

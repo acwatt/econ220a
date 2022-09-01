@@ -26,6 +26,9 @@ begin
 	# using JuMP, KNITRO
 end;
 
+# ╔═╡ 8c22fac2-5375-43fb-90bb-a8186955c578
+using MATLAB, SparseArrays
+
 # ╔═╡ d0c264ef-6fd8-420b-8c63-dec4cd4cdf6d
 html"<span style='font-size:4em;'>Econ 220A Problem Set 2</span>"
 
@@ -1001,8 +1004,191 @@ html"<br><br><br><br><br><br><br><br>"
 # ╔═╡ 79ba563c-0792-4916-b23b-832f28e6d81d
 md"# QUESTION 5: RANDOM COEFFICIENTS MODEL"
 
-# ╔═╡ 8c22fac2-5375-43fb-90bb-a8186955c578
+# ╔═╡ 0286f83c-3cac-4e9a-a80a-c6318ee1be38
+md"""
+**Not finished**:
+After some tweaking with Nevo's Matlab code, I was able to get results with his simulated data files. I was also able to load our data into similar matricies and get the first few iterations to run. Getting everything into conformable matricies was a helpful first step, so I am reporting the code / steps below. After the first iterations, the gradient returns NaN values, and the line search algorithm is unable to handle the issue. I think the next step would be to give the gradient function an "undesirable" value in the case it encounters NaN, so it will try a different direction. I hope to return to this estimation in the future to work out the kinks, but for now, I have to stop short of getting results for our dataset.
+"""
 
+# ╔═╡ 30326caa-b42a-4446-9c02-6aa6c9ae78bc
+
+
+# ╔═╡ 1618ab9d-a90c-4da1-98f1-4158beba0382
+md"""
+Need to have MATLAB installed on computer.
+    See https://juliahub.com/ui/Packages/MATLAB/6HSOn/0.7.3 for more instructions \
+    (1) Install MATLAB \
+    (2) Start a Command Prompt as an Administrator and enter `matlab /regserver`. \
+    (3) From Julia run: Pkg.add("MATLAB")
+"""
+
+# ╔═╡ e61cc5c6-84d7-4f6c-8996-0c8abcef0728
+cd("NevoCode")
+
+# ╔═╡ a863b8ba-3841-40b4-93ee-f8b78926e60a
+# Convert a vector to matrix
+tomat(v) = reshape(v, length(v), 1)
+
+# ╔═╡ e8c7e932-66f9-4c7f-b3e5-51d51fab43a3
+df5 = copy(df);
+
+# ╔═╡ 731adc49-49ef-4f45-b9b4-e8862e0ad820
+# Sort: relations to Nevo: `:market` ~ date-city, `:prodid` ~ brand
+sort!(df5, [:market,:prodid]);
+
+# ╔═╡ 6c74310d-e049-4dc4-ad2f-009be53ee3f7
+md"""
+`id` - (2256x1) -> (500x1)
+    an id variable in the format bbbbccyyq, 
+    where bbbb is a unique 4 digit identifier for each brand 
+    (the first digit is company and last 3 are brand, 
+    i.e., 1006 is K Raisin Bran and 3006 is Post Raisin Bran), 
+    cc is a city code, yy is year (=88 for all observations is this data set) 
+    and q is quarter. All the other variables are sorted by date city brand.
+"""
+
+# ╔═╡ 6739fa36-130b-41ef-9db3-28a3101692a0
+id = @chain df5 begin
+    @transform(:id = parse.(Int, string.(:prodid).*lpad.(:market,3,"0")))
+    _.id
+    reshape(_, length(_), 1)
+    Matrix{Float64}(_)
+end;
+
+# ╔═╡ 368283a4-5500-413b-a2ed-6aa23a2e1a48
+md"""
+`id_demo` - (94x1) -> (100x1)
+    an id variable for the random draws and the demographic variables, 
+    of the format ccyyq. Since these variables do not vary by brand 
+    they are not repeated. The first observation here corresponds to
+    the first market, the second to the next and so forth.
+"""
+
+# ╔═╡ 423d54e5-9375-478a-87ac-615129271bab
+id_demo = @chain df5.market unique;
+
+# ╔═╡ 86c34ca8-498f-4180-8db3-fed11b9b1b4e
+md"""
+`s_jt` - (2265x1) -> (500x1)
+    the market shares of brand j in market t. 
+    Each row corresponds to the equivalent row in id.
+"""
+
+# ╔═╡ 9b3756a6-65e1-4fdf-9d11-ba529c401c9f
+s_jt = df5.sjn;
+
+# ╔═╡ 4d3f6c05-60e4-4658-94a2-498575ce82e5
+md"""
+`x1` - (2256x25) -> (500x6)
+    the variables that enter the linear part of the estimation. 
+    Here this consists of a price variable (first column) 
+    and 24 brand dummy variables. Each row corresponds to the 
+    equivalent row in id. This matrix is saved as a sparse matrix.
+"""
+
+# ╔═╡ cc1d0deb-d436-482b-bca9-b0f3b8f591b1
+x1 = @chain df5 begin
+    @select(:pjn, :d1,:d2,:d3,:d4,:d5)
+    sparse(Matrix(_))
+end ;
+
+# ╔═╡ af615892-e9cc-464c-976e-eec396f5e7ab
+md"""
+`x2` - (2256x4) -> (500x4)
+    the variables that enter the non-linear part of the estimation. 
+    Here this consists of a constant, price, sugar content and a 
+    mushy dummy, respectively. Each row corresponds to the equivalent 
+    row in id. 
+    For us, this means constant, price, x1, x2 (product characteristics)
+"""
+
+# ╔═╡ 3a66cdfd-c48b-49db-ab1b-7defd822d315
+#= =#
+x2 = @chain df5 begin
+    @transform(:one = 1)
+    @select(:one, :pjn, :x1,:x2)
+    Matrix(_)
+end;
+
+# ╔═╡ 9c022ee1-6e45-4d03-ab60-b219224d2346
+md"""
+`v` - (94x80) -> (100x80)
+    N(0,1) random draws given for the estimation. 
+    For each market 80 iid normal draws are provided.
+    They correspond to 20 "individuals", where for each 
+    individual there is a different draw for each column of x2. 
+    The ordering is given by id_demo.
+"""
+
+# ╔═╡ 3d7f46f2-c0d8-475f-903c-b3ba752cbc9a
+v =  rand(Normal(), 100, 80);
+
+# ╔═╡ 885bc5d4-15c8-4da2-b1b6-e86f74d523e9
+md"""
+`demogr` - (94x80) -> (100x80)
+    draws of demographic variables from the CPS for 20 individuals 
+    in each market. The first 20 columns give the income, 
+    the next 20 columns the income squared, 
+    columns 41 through 60 are age and 61 through 80 are 
+    a child dummy variable (=1 if age <= 16). 
+    Each of the variables has been demeaned (i.e. the mean of 
+    each set of 20 columns over the 94 rows is 0). The ordering 
+    is given by id_demo. 
+
+Because we don't have data on the demographic distributions of each
+    market (or all the markets), I'm going to pretend Nevo's demographics
+    match our markets. This requires me to sample 6 rows at random and 
+    append them to get upto 100 markets. I could also remove the 
+    demographics completely and still estimate the model. 
+
+	I realize that repeating 6 rows creates identical copies of 6 markets. I wonder if this could create the NaN issue that the gradient function was running into?
+"""
+
+# ╔═╡ 153db1f4-a0a1-4df8-bcdd-58df5c6a9bc6
+begin
+	idx = sample(1:94, 6)
+	demogr = @chain read_matfile("ps2.mat")["demogr"] begin
+	    jmatrix
+	    vcat(_, _[idx, :])
+	end
+end;
+
+# ╔═╡ 040373a9-9a5c-4b56-9045-bfb257f1f1f9
+md"""
+`iv` - (2256x21) -> (500x5)
+    The file iv.mat contains the variable iv which consists of an 
+    id column (see the id variable above) and 20 columns of IV's 
+    for the price variable. The variable is sorted in the same 
+    order as the variables in the ps2.mat.
+    
+I need to combine the id column with our 4 IV's from the
+    preferred Nested Logit model above.
+"""
+
+# ╔═╡ 01d2da7e-7abd-47b8-8b14-24fb31b7733c
+iv = @chain df2e begin
+    @transform(:id = id[:,1])
+    @select(:id, :w1, :w2, :x1_avg, :x2_avg)
+    Matrix{Float64}(_)
+end;
+
+# ╔═╡ 406b73bb-c08b-402f-bbae-612639f28a39
+md"""
+## Write the matricies to matlab files to open in matlab and run with `rc_dc_acw.m`
+"""
+
+# ╔═╡ 5c0f5162-14c5-4ab6-b0a0-673920a9b9a2
+write_matfile("ps2.mat";
+    id = tomat(id),
+    id_demo = tomat(id_demo),
+    s_jt = tomat(s_jt),
+    x1 = x1,
+    x2 = x2,
+    v = v,
+    demogr = demogr)
+
+# ╔═╡ 7c70f169-e33d-4289-a680-5adabbc1f0f2
+write_matfile("iv.mat"; iv = iv)
 
 # ╔═╡ 04e8f596-4389-40e9-92de-5f88e993c880
 html"<br><br><br><br><br><br><br><br>"
@@ -1020,7 +1206,7 @@ Nevo Footnote 22: That is, Φ=Z'Z, which is the “optimal” weight matrix unde
 
 # ╔═╡ b99662e7-8669-417a-8f38-db75bc577bc2
 # Create table of contents on right side of screen
-TableOfContents()
+#TableOfContents()
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
@@ -1035,11 +1221,13 @@ FixedEffectModels = "9d5cd8c9-2029-5cab-9928-427838db53e3"
 GLM = "38e38edf-8417-5370-95a0-9cbb8c7f171a"
 Latexify = "23fbe1c1-3f47-55db-b15f-69d7ec21a316"
 Luxor = "ae8d54c2-7ccd-5906-9d76-62fc9837b5bc"
+MATLAB = "10e44e05-a98a-55b3-a45b-ba969058deb6"
 NLsolve = "2774e3e8-f4cf-5e23-947b-6d7e65073b56"
 OrderedCollections = "bac558e1-5e72-5ebc-8fee-abe8a469f55d"
 PlutoUI = "7f904dfe-b85e-4ff6-b463-dae2292396a8"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 ShiftedArrays = "1277b4bf-5013-50f5-be3d-901d8477a67a"
+SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
 StatsFuns = "4c63d2b9-4356-54db-8cca-17b64c39e42c"
@@ -1057,6 +1245,7 @@ FixedEffectModels = "~1.6.5"
 GLM = "~1.7.0"
 Latexify = "~0.15.15"
 Luxor = "~3.2.0"
+MATLAB = "~0.8.3"
 NLsolve = "~4.5.1"
 OrderedCollections = "~1.4.1"
 PlutoUI = "~0.7.38"
@@ -1775,6 +1964,12 @@ deps = ["Base64", "Cairo", "Colors", "Dates", "FFMPEG", "FileIO", "Juno", "LaTeX
 git-tree-sha1 = "156958d51d9f758dc5a00dcc6da4f61cacf579ed"
 uuid = "ae8d54c2-7ccd-5906-9d76-62fc9837b5bc"
 version = "3.2.0"
+
+[[deps.MATLAB]]
+deps = ["Libdl", "SparseArrays"]
+git-tree-sha1 = "e263657fe013cb02450c5d4210d2c50a354a5e08"
+uuid = "10e44e05-a98a-55b3-a45b-ba969058deb6"
+version = "0.8.3"
 
 [[deps.MKL_jll]]
 deps = ["Artifacts", "IntelOpenMP_jll", "JLLWrappers", "LazyArtifacts", "Libdl", "Pkg"]
@@ -2638,7 +2833,33 @@ version = "0.9.1+5"
 # ╟─8efaf071-fb8b-4e82-a0a6-f44ecb04b23b
 # ╟─1068fde5-e5c2-40ba-b654-f18bb861f329
 # ╟─79ba563c-0792-4916-b23b-832f28e6d81d
+# ╟─0286f83c-3cac-4e9a-a80a-c6318ee1be38
+# ╠═30326caa-b42a-4446-9c02-6aa6c9ae78bc
+# ╟─1618ab9d-a90c-4da1-98f1-4158beba0382
 # ╠═8c22fac2-5375-43fb-90bb-a8186955c578
+# ╠═e61cc5c6-84d7-4f6c-8996-0c8abcef0728
+# ╠═a863b8ba-3841-40b4-93ee-f8b78926e60a
+# ╠═e8c7e932-66f9-4c7f-b3e5-51d51fab43a3
+# ╠═731adc49-49ef-4f45-b9b4-e8862e0ad820
+# ╟─6c74310d-e049-4dc4-ad2f-009be53ee3f7
+# ╠═6739fa36-130b-41ef-9db3-28a3101692a0
+# ╟─368283a4-5500-413b-a2ed-6aa23a2e1a48
+# ╠═423d54e5-9375-478a-87ac-615129271bab
+# ╟─86c34ca8-498f-4180-8db3-fed11b9b1b4e
+# ╠═9b3756a6-65e1-4fdf-9d11-ba529c401c9f
+# ╟─4d3f6c05-60e4-4658-94a2-498575ce82e5
+# ╠═cc1d0deb-d436-482b-bca9-b0f3b8f591b1
+# ╟─af615892-e9cc-464c-976e-eec396f5e7ab
+# ╠═3a66cdfd-c48b-49db-ab1b-7defd822d315
+# ╟─9c022ee1-6e45-4d03-ab60-b219224d2346
+# ╠═3d7f46f2-c0d8-475f-903c-b3ba752cbc9a
+# ╟─885bc5d4-15c8-4da2-b1b6-e86f74d523e9
+# ╠═153db1f4-a0a1-4df8-bcdd-58df5c6a9bc6
+# ╟─040373a9-9a5c-4b56-9045-bfb257f1f1f9
+# ╠═01d2da7e-7abd-47b8-8b14-24fb31b7733c
+# ╟─406b73bb-c08b-402f-bbae-612639f28a39
+# ╠═5c0f5162-14c5-4ab6-b0a0-673920a9b9a2
+# ╠═7c70f169-e33d-4289-a680-5adabbc1f0f2
 # ╟─04e8f596-4389-40e9-92de-5f88e993c880
 # ╟─79b95d28-3666-449b-b77d-a6fa46957e03
 # ╟─56a3faff-ba43-479c-bf19-22e49b6b0ec5

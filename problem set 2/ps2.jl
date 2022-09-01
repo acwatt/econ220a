@@ -659,6 +659,8 @@ estimate_price_elasticities_NL!(df2e, reg2e_ss)
 
 
 
+
+
 #?==============================================================================
 #?==============================================================================
 #?==============================================================================
@@ -907,6 +909,136 @@ end
 #?==============================================================================
 #?==============================================================================
 #?==============================================================================
+
+#= Need to have MATLAB installed on computer.
+    See https://juliahub.com/ui/Packages/MATLAB/6HSOn/0.7.3 for more instructions
+    (1) Install MATLAB
+    (2) Start a Command Prompt as an Administrator and enter `matlab /regserver`.
+    (3) From Julia run: Pkg.add("MATLAB")
+=# 
+using MATLAB, SparseArrays
+cd("NevoCode")
+
+# Convert a vector to matrix
+tomat(v) = reshape(v, length(v), 1)
+
+#! Need to create matlab objects
+df5 = copy(df)
+
+# Sort: relations to Nevo: `:market` ~ date-city, `:prodid` ~ brand
+sort!(df5, [:market,:prodid])
+
+#= id - (2256x1) -> (500x1)
+    an id variable in the format bbbbccyyq, 
+    where bbbb is a unique 4 digit identifier for each brand 
+    (the first digit is company and last 3 are brand, 
+    i.e., 1006 is K Raisin Bran and 3006 is Post Raisin Bran), 
+    cc is a city code, yy is year (=88 for all observations is this data set) 
+    and q is quarter. All the other variables are sorted by date city brand.=#
+id = @chain df5 begin
+    @transform(:id = parse.(Int, string.(:prodid).*lpad.(:market,3,"0")))
+    _.id
+    reshape(_, length(_), 1)
+    Matrix{Float64}(_)
+end
+
+
+#= id_demo - (94x1) -> (100x1)
+    an id variable for the random draws and the demographic variables, 
+    of the format ccyyq. Since these variables do not vary by brand 
+    they are not repeated. The first observation here corresponds to
+    the first market, the second to the next and so forth.=#
+id_demo = @chain df5.market unique
+
+
+#= s_jt - (2265x1) -> (500x1)
+    the market shares of brand j in market t. 
+    Each row corresponds to the equivalent row in id. =#
+s_jt = df5.sjn
+
+#= x1 - (2256x25) -> (500x6)
+    the variables that enter the linear part of the estimation. 
+    Here this consists of a price variable (first column) 
+    and 24 brand dummy variables. Each row corresponds to the 
+    equivalent row in id. This matrix is saved as a sparse matrix. =#
+x1 = @chain df5 begin
+    @select(:pjn, :d1,:d2,:d3,:d4,:d5)
+    sparse(Matrix(_))
+end 
+
+#= x2 - (2256x4) -> (500x4)
+    the variables that enter the non-linear part of the estimation. 
+    Here this consists of a constant, price, sugar content and a 
+    mushy dummy, respectively. Each row corresponds to the equivalent 
+    row in id. 
+    For us, this means constant, price, x1, x2 (product characteristics)=#
+x2 = @chain df5 begin
+    @transform(:one = 1)
+    @select(:one, :pjn, :x1,:x2)
+    Matrix(_)
+end
+
+#= v - (94x80) -> (100x80)
+    N(0,1) random draws given for the estimation. 
+    For each market 80 iid normal draws are provided.
+    They correspond to 20 "individuals", where for each 
+    individual there is a different draw for each column of x2. 
+    The ordering is given by id_demo. =#
+v =  rand(Normal(), 100, 80)
+
+#= demogr - (94x80) -> (100x80)
+    draws of demographic variables from the CPS for 20 individuals 
+    in each market. The first 20 columns give the income, 
+    the next 20 columns the income squared, 
+    columns 41 through 60 are age and 61 through 80 are 
+    a child dummy variable (=1 if age <= 16). 
+    Each of the variables has been demeaned (i.e. the mean of 
+    each set of 20 columns over the 94 rows is 0). The ordering 
+    is given by id_demo. 
+
+    Because we don't have data on the demographic distributions of each
+    market (or all the markets), I'm going to pretend Nevo's demographics
+    match our markets. This requires me to sample 6 rows at random and 
+    append them to get upto 100 markets. I could also remove the 
+    demographics completely and still estimate the model. 
+=#
+idx = sample(1:94, 6)
+demogr = @chain read_matfile("ps2.mat")["demogr"] begin
+    jmatrix
+    vcat(_, _[idx, :])
+end
+
+
+
+#= iv - (2256x21) -> (500x5)
+    The file iv.mat contains the variable iv which consists of an 
+    id column (see the id variable above) and 20 columns of IV's 
+    for the price variable. The variable is sorted in the same 
+    order as the variables in the ps2.mat.
+    
+    I need to combine the id column with our 4 IV's from the
+    preferred Nested Logit model above.
+=#
+iv = @chain df2e begin
+    @transform(:id = id[:,1])
+    @select(:id, :w1, :w2, :x1_avg, :x2_avg)
+    Matrix{Float64}(_)
+end
+
+
+write_matfile("ps2.mat";
+    id = tomat(id),
+    id_demo = tomat(id_demo),
+    s_jt = tomat(s_jt),
+    x1 = x1,
+    x2 = x2,
+    v = v,
+    demogr = demogr)
+
+write_matfile("iv.mat"; iv = iv)
+
+
+
 
 
 

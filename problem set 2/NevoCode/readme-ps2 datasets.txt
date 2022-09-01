@@ -1,9 +1,11 @@
-The data set used for problem set 2 consists of two Matlab files: ps2.mat and iv.mat (both Matlab 5 files. If you are using an earlier version of Matlab dowload ps2.v4 and iv.v4). If you plan to use Matlab use these files directly. If not, use the Matlab "load" and "save" commands to create ASCII files. The date are (semi-fabricated) data on 24 brands of the only REAL product (ready-to-eat cereal, what else did you think?), for 94 markets (47 US cities for the first 2 quarters of 1988). These variables are defined and were treated as described in Nevo, 1997, Measuring Market Power in the Ready-to-Eat Cereal Industry, NBER WP no. 6387. See there for details. Note: these data should NOT be used to make any real inference.
+The data set used for problem set 2 consists of two Matlab files: ps2.mat and iv.mat (both Matlab 5 files. If you are using an earlier version of Matlab dowload ps2.v4 and iv.v4). If you plan to use Matlab use these files directly. If not, use the Matlab "load" and "save" commands to create ASCII files. The date are (semi-fabricated) data on 24 brands of the only REAL product (ready-to-eat cereal, what else did you think?), for 94 markets (47 US cities for the first 2 quarters of 1988). 94*24=2256. These variables are defined and were treated as described in Nevo, 1997, Measuring Market Power in the Ready-to-Eat Cereal Industry, NBER WP no. 6387. See there for details. Note: these data should NOT be used to make any real inference.
+
+
 The file ps2.mat contains the following variables:
 
 id - an id variable in the format bbbbccyyq, where bbbb is a unique 4 digit identifier for each brand (the first digit is company and last 3 are brand, i.e., 1006 is K Raisin Bran and 3006 is Post Raisin Bran), cc is a city code, yy is year (=88 for all observations is this data set) and q is quarter. All the other variables are sorted by date city brand.
 
-id_demo - an id variable for the random draws and the demographic variables, of the format ccyyq. Since these variables do not vary by brand they are not repeated. The first observation here corresponds to the first market, the second to the next 24 and so forth.
+id_demo - an id variable for the random draws and the demographic variables, of the format ccyyq. Since these variables do not vary by brand they are not repeated. The first observation here corresponds to the first market, the second to the next and so forth.
 
 s_jt - the market shares of brand j in market t. Each row corresponds to the equivalent row in id.
  

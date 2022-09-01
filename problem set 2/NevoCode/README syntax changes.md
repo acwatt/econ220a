@@ -2,11 +2,11 @@
 First, you need to make sure the Optimization Toolbox is installed in your version of matlab. If you type "fminunc" into the command window in Matlab, it will prompt you that you need to install the Optimization Toolbox add on. Install the add on (you will need to sign into your account).
 
 # Getting foptions
-
+`foptions` is a 1x18 array of optimization settings. I think these used to be part of the Optimization Toolbox, but have been superceded by the `optimoptions("fminunc")` object. But this new object does not allow the type of array-based settings changes that the original Nevo code uses. So I copied the `foptions` that someone had loaded into the UCB ARE server and saved it as `foptions-acw.mat`. This is now loaded in the updated version of the code `rc_dc_acw.m`.
 
 
 # Making updates from version 5.1
-Using the following PDF, I needed to make several syntax changes to the old Matlab 5.1 code for it to run on Matlab R2022a.
+The original (unchanged) code is in `rc_dc.m`, and `rc_dc_acw.m` contains code updated for Matlab version R2022a. Using the following PDF, I needed to make several syntax changes to the old Matlab 5.1 code for it to run on Matlab R2022a.
 "Optimization Toolbox -- User's Guide, Version 2"
 https://instruct.uwo.ca/engin-sc/391b/downloads/optim_tb.pdf
 

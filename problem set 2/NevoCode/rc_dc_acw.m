@@ -4,19 +4,27 @@
 % #6387. 
 
 % Written by Aviv Nevo, May 1998.
-
-
 global invA ns x1 x2 s_jt IV vfull dfull theta1 theti thetj cdid cdindex
 
-% load data. see description in readme.txt
+% load data. see description in readme-ps2 datasets.txt
 load ps2
 load iv
-IV = [iv(:,2:21) x1(:,2:25)];
-clear iv
 
 ns = 20;       % number of simulated "indviduals" per market %
-nmkt = 94;     % number of markets = (# of cities)*(# of quarters)  %
-nbrn = 24;     % number of brands per market. if the numebr differs by market this requires some "accounting" vector %
+nmkt = 100;     % number of markets = (# of cities)*(# of quarters)  %
+nbrn = 5;     % number of brands per market. if the numebr differs by market this requires some "accounting" vector %
+ninstr = 4;   % number of price IVs
+
+% To run original files, uncomment below 5 lines
+% load ps2_old
+% load iv_old
+% nmkt = 94;
+% nbrn = 24;
+% ninstr = 20;
+
+IV = [iv(:,2:ninstr+1) x1(:,2:nbrn+1)];
+clear iv
+
 % this vector relates each observation to the market it is in %
 cdid = kron([1:nmkt]',ones(nbrn,1));    
 % this vector provides for each index the of the last observation %
@@ -28,6 +36,7 @@ cdindex = [nbrn:nbrn:nbrn*nmkt]';
 
 % starting values. zero elements in the following matrix correspond to %
 % coeff that will not be max over,i.e are fixed at zero. % 
+%            sigma    income   income^2    age       child
 theta2w=    [0.3302   5.4819         0    0.2037         0;
              2.4526  15.8935    -1.2000        0    2.6342;
              0.0163  -0.2506         0    0.0511         0;
@@ -41,8 +50,8 @@ theta2w=    [0.3302   5.4819         0    0.2037         0;
 horz=['    mean       sigma      income   income^2    age    child'];
 vert=['constant  ';
       'price     ';
-          'sugar     ';
-          'mushy     '];
+      'sugar     ';
+      'mushy     '];
 
 % create weight matrix
 invA = inv([IV'*IV]);
@@ -68,6 +77,7 @@ clear mid y outshr t oldt2 mvalold temp sum1
 vfull = v(cdid,:);
 dfull = demogr(cdid,:);
 
+load foptions-acw.mat
 options = foptions;
 options(2) = 0.1;
 options(3) = 0.01;
