@@ -1,5 +1,13 @@
+# Install the Optimiation Toolbox
+First, you need to make sure the Optimization Toolbox is installed in your version of matlab. If you type "fminunc" into the command window in Matlab, it will prompt you that you need to install the Optimization Toolbox add on. Install the add on (you will need to sign into your account).
+
+# Getting foptions
+
+
+
+# Making updates from version 5.1
 Using the following PDF, I needed to make several syntax changes to the old Matlab 5.1 code for it to run on Matlab R2022a.
-"Optimization Toolbox -- User�s Guide, Version 2"
+"Optimization Toolbox -- User's Guide, Version 2"
 https://instruct.uwo.ca/engin-sc/391b/downloads/optim_tb.pdf
 
 Pg 96, section "Converting Your Code to Version 2 Syntax" has a syntax convertion table that I used to make the following changes to the code:

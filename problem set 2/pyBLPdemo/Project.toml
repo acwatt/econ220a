@@ -1,3 +1,7 @@
 [deps]
 Conda = "8f4d0f93-b110-5947-807f-2305c1781a2d"
+DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
+FileIO = "5789e2e9-d7fb-5bc7-8068-2c6fae9b9549"
 PyCall = "438e738f-606a-5dbb-bf0a-cddfbfd45ab0"
+ReadStat = "d71aba96-b539-5138-91ee-935c3ee1374c"
+StatFiles = "1463e38c-9381-5320-bcd4-4134955f093a"

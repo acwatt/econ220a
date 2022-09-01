@@ -9,6 +9,7 @@ begin
 	# For Stats stuff
 	using Statistics, StatsBase, StatsPlots, StatsFuns, GLM
 	using CovarianceMatrices, StatsModels, FixedEffectModels
+	using FiniteDifferences, NLsolve
 	# For dataframes
 	using DataFrames, CSV, DataFramesMeta
 	using ShiftedArrays
@@ -64,6 +65,9 @@ Notes:
 
 # ╔═╡ cada010e-60b8-4eab-8de0-8f89536da67d
 md"# Packages"
+
+# ╔═╡ 57216c6e-c3c8-4b14-93df-a802dbeac33d
+
 
 # ╔═╡ 3e0d4135-adcd-4f45-ba75-410049d457dd
 md"# Setup"
@@ -182,29 +186,6 @@ function get_coef(reg, var)
     return reg.coef[idx]
 end
 
-# ╔═╡ 4e3c0446-8da6-4784-b5f6-11c763ad96dc
-"""Estimate own-price and cross-price elasticities of the predicted market shares for Conditional Logit; add columns.
-
-Only adds cross-price elasticities relative to product 3 (ηjjn and ηj3n).
-Uses elasticity equation from Nevo (2000) pg 522.
-Need to use the predicted market share (̂sⱼₙ = Xβ)
-"""
-function add_price_elasticities!(reg, df)
-	sort!(df, [:market, :prodid])
-    # Get price coefficient
-    α = -get_coef(reg, "pjn")
-    df.ηjjn = -α * df.pjn .* (1 .- df.sjn_hat)
-    df.ηj3n = @chain df begin
-        filter(:prodid => ==(3), _)
-        combine(:market, [:pjn,:sjn_hat] => ((p,s) -> α*p.*s) => :ηj3n)
-        leftjoin(df[df.prodid .!=3,[:market,:prodid]], _, on = :market)
-        leftjoin(df, _, on = [:market, :prodid])
-        sort([:market, :prodid])
-		_[!,:ηj3n]
-	end
-    return df
-end
-
 # ╔═╡ c1e64762-2357-4104-89d4-0df3a62cb5e6
 """Create the within-nest share variable ̄sⱼₕ"""
 function add_ingroup_share!(df)
@@ -228,71 +209,8 @@ begin
 	df = add_ingroup_share!(df)
 end;
 
-# ╔═╡ 8d8614fa-4c88-4984-b8f6-29b863678f2d
-begin
-	df1a = copy(df)
-	# Regress δ on X to estimate α,β that minimizes error term
-	# δ = mean "observed" utility, Xβ-αp = mean predicted utility (α,β are mean utility parameters)
-	reg1a = reg(df1a, @formula(δjn ~ pjn + d1 + d2  + d4 + d5 + x1 + x2), Vcov.cluster(:market))
-	# Predict the shares using Xβ-αp (Nevo Eq. 6)
-	add_predicted_shares!(reg1a, df1a)
-	# Calculate estimated own-price elasticities for each product 
-	# Calculate estimated cross-price elasticity with respect to product 3.
-	add_price_elasticities!(reg1a, df1a)
-end;
-
-# ╔═╡ 7ab92590-e8ca-4d71-976a-fec60e8c2762
-@chain df1a begin
-	groupby(:prodid)
-	combine(:ηjjn => mean => :ηjj, :ηj3n => mean => :ηj3)
-	latexify(_, fmt=FancyNumberFormatter(3))
-end
-
 # ╔═╡ e549f127-48da-4999-b8b1-0254cdf46387
 reg1b_fs = reg(df, @formula(pjn ~ w1 + w2 + d1 + d2  + d4 + d5 + x1 + x2), Vcov.cluster(:market))
-
-# ╔═╡ abf4985a-206c-49bb-ab93-cd684e2740fd
-begin
-	df1b = copy(df)
-	# Regress δ on X to estimate α,β that minimizes error term
-	# δ = mean "observed" utility, Xβ-αp = mean predicted utility (α,β are mean utility parameters)
-	reg1b_ss = reg(df1b, @formula(δjn ~ (pjn ~ w1 + w2) + d1 + d2  + d4 + d5 + x1 + x2), Vcov.cluster(:market))
-	# Predict the shares using Xβ-αp (Nevo Eq. 6)
-	add_predicted_shares!(reg1b_ss, df1b)
-	# Calculate estimated own-price elasticities for each product 
-	# Calculate estimated cross-price elasticity with respect to product 3.
-	add_price_elasticities!(reg1b_ss, df1b)
-end;
-
-# ╔═╡ 33b0af57-fe9f-4e34-812e-8a2d16c6507f
-reg1b_ss
-
-# ╔═╡ 5bbbd549-4b93-4e09-abec-2ba2c419dd39
-@chain df1b begin
-	groupby(:prodid)
-	combine(:ηjjn => mean => :ηjj, :ηj3n => mean => :ηj3)
-	# rename(:ηjj => :ηⱼⱼ, :ηj3 => :ηⱼ₃)
-	latexify(_, fmt=FancyNumberFormatter(3))
-end
-
-# ╔═╡ 623d6cc9-649f-49c0-a902-e198976a7abd
-begin
-	df1c = copy(df)
-	# Create instrument: avg characteristics of other products
-	add_avg_characteristics!(df1c)
-	# Regress δ on X to estimate α,β that minimizes error term
-	# δ = mean "observed" utility, Xβ-αp = mean predicted utility (α,β are mean utility parameters)
-	reg1c = reg(df1c, @formula(δjn ~ (pjn ~ x1_avg + x2_avg) + d1 + d2  + d4 + d5 + x1 + x2), Vcov.cluster(:market))
-	# Predict the shares using Xβ-αp (Nevo Eq. 6)
-	add_predicted_shares!(reg1c, df1c)
-	# Calculate estimated own-price elasticities for each product 
-	# Calculate estimated cross-price elasticity with respect to product 3.
-	add_price_elasticities!(reg1c, df1c)
-	reg1c
-end
-
-# ╔═╡ 788a4959-f875-48ae-8be6-f14de1f5bf0b
-reg1c_fs = reg(df1c, @formula(pjn ~ x1_avg + x2_avg + d1 + d2  + d4 + d5 + x1 + x2), Vcov.cluster(:market))
 
 # ╔═╡ c67a32ba-b701-4498-86be-14662a113e15
 html"<br><br><br><br><br><br><br><br>"
@@ -304,60 +222,63 @@ md"# QUESTION 2: NESTED LOGIT"
 md"## (a) Tree Structure of in-market Substitution"
 
 # ╔═╡ b9d8c922-803c-4d72-b384-c9eb18a69b27
-begin
-	s = 50  # overall scale factor (including font size)
-	y = 2.5  # vertical scale factor
-	x = 1.5  # horizontal scale factor
-	p0 = Point(0s*x, -1s*y)
-	pairport = Point(-2s*x, 0s*y)
-	pnone = Point(0s*x, 0s*y)
-	pcity = Point(2s*x, 0s*y)
-	p2 = Point(-3s*x, s*y)
-	p3 = Point(-s*x, s*y)
-	p4 = Point(s*x, s*y)
-	p5 = Point(3s*x, s*y)
-	lw = 3; ahl = 20;
-	myarrow(x,y;ahl=ahl) = arrow(x, y, linewidth=lw, arrowheadlength = ahl)
-	@draw begin
-		fontsize(0.5s)
-		# Arrows
-		myarrow(p0, pnone)  # to firm one
-		myarrow(p0, pairport; ahl=0)
-		myarrow(p0, pcity)
-		myarrow(pairport, p2)
-		myarrow(pairport, p3)
-		myarrow(pcity, p4)
-		myarrow(pcity, p5)
-		
-		# Market circle
-		sethue("white")
-		ellipse(p0, 2.5s, 1.2s, :fill)
-		sethue("black")
-		ellipse(p0, 2.5s, 1.2s, :stroke)
-		label("Market n", :S, p0, offset=-10)
-		
-		# Airport circle
-		sethue("white")
-		circle(pairport, 0.9s, :fill)
-		sethue("black")
-		circle(pairport, 0.9s, :stroke)
-		label("Airport", :S, pairport, offset=-10)
-		
-		# City circle
-		sethue("white")
-		circle(pcity, 0.9s, :fill)
-		sethue("black")
-		circle(pcity, 0.9s, :stroke)
-		label("City", :S, pcity, offset=-10)
+function draw_arrow_diagram()
+    s = 50  # overall scale factor (including font size)
+    y = 2.5  # vertical scale factor
+    x = 1.5  # horizontal scale factor
+    p0 = Point(0s*x, -1s*y)
+    pairport = Point(-2s*x, 0s*y)
+    pnone = Point(0s*x, 0s*y)
+    pcity = Point(2s*x, 0s*y)
+    p2 = Point(-3s*x, s*y)
+    p3 = Point(-s*x, s*y)
+    p4 = Point(s*x, s*y)
+    p5 = Point(3s*x, s*y)
+    lw = 3; ahl = 20;
+    myarrow(x,y;ahl=ahl) = arrow(x, y, linewidth=lw, arrowheadlength = ahl)
+    @draw begin
+        fontsize(0.5s)
+        # Arrows
+        myarrow(p0, pnone)  # to firm one
+        myarrow(p0, pairport; ahl=0)
+        myarrow(p0, pcity)
+        myarrow(pairport, p2)
+        myarrow(pairport, p3)
+        myarrow(pcity, p4)
+        myarrow(pcity, p5)
+        
+        # Market circle
+        sethue("white")
+        ellipse(p0, 2.5s, 1.2s, :fill)
+        sethue("black")
+        ellipse(p0, 2.5s, 1.2s, :stroke)
+        label("Market n", :S, p0, offset=-10)
+        
+        # Airport circle
+        sethue("white")
+        circle(pairport, 0.9s, :fill)
+        sethue("black")
+        circle(pairport, 0.9s, :stroke)
+        label("Airport", :S, pairport, offset=-10)
+        
+        # City circle
+        sethue("white")
+        circle(pcity, 0.9s, :fill)
+        sethue("black")
+        circle(pcity, 0.9s, :stroke)
+        label("City", :S, pcity, offset=-10)
 
-		# Firm Text
-		label("Firm 1", :S, pnone)
-		label("Firm 2", :S, p2)
-		label("Firm 3", :S, p3)
-		label("Firm 4", :S, p4)
-		label("Firm 5", :S, p5)
-	end 10s*x 3s*y
-end
+        # Firm Text
+        label("Firm 1", :S, pnone)
+        label("Firm 2", :S, p2)
+        label("Firm 3", :S, p3)
+        label("Firm 4", :S, p4)
+        label("Firm 5", :S, p5)
+    end 10s*x 3s*y
+end;
+
+# ╔═╡ 20617897-56df-4403-bfe6-bea08006bdc0
+draw_arrow_diagram()
 
 # ╔═╡ 2e5a61d5-bc03-4bb7-91d0-6d5078704954
 md"## (b) Nested Logit using OLS"
@@ -491,13 +412,14 @@ end
 
 # ╔═╡ 3d6e9571-552d-4c7b-b6a6-9b6a290b37c9
 """Estimate Nested Logit group share denominator ∑ₕ Dₕ (BLP Eq 24).
-    `D_sum` = ∑ₕ Dₕ in each market. 
-    Requires `δ_hat` = X'β  in df
+    `D_sum` = ∑ₕ Dₕ in each market. \\
+    Requires `δ_hat` = X'β  in df \\
+    Note: h=0 is outside group, and D₀ = 1 (since δ₀ is normalized to 0, and e⁰=1)
 """
 function add_market_demoninator_NL!(df, σ)
     @chain df begin
         groupby(:market)
-        @combine(:D_sum = sum(:Dh.^(1-σ)))
+        @combine(:D_sum = sum(:Dh.^(1-σ)) + 1)
         @select(:market, :D_sum)
         leftjoin!(df, _, on=:market)
     end
@@ -516,9 +438,9 @@ function add_ingroup_share_NL!(df, σ)
 end
 
 # ╔═╡ fa2926e4-7b34-48de-bc46-44c81239b5c2
-"""Estimate Nested Logit predicted market share (BLP Eq 25).
-    sⱼ = exp(δⱼ / (1-σ)) / (Dₕ^σ * D_sum).
-    Requires δ_hat = X'β  in df
+"""Estimate Nested Logit predicted market share (BLP Eq 25). \\
+    `sⱼ = exp(δⱼ / (1-σ)) / (Dₕ^σ * D_sum)`. \\
+    Requires `δ_hat = X'β`  in df
 """
 function add_market_share_NL!(df, σ)
     @chain df begin
@@ -626,6 +548,93 @@ end
 """
 add_marginal_costs_NL!(df) = @transform!(df, :mc = :pjn .* (1 .+ 1 ./ :ηjjn))
 
+
+# ╔═╡ 4e3c0446-8da6-4784-b5f6-11c763ad96dc
+"""Estimate own-price and cross-price elasticities of the predicted market shares for Conditional Logit; add columns.
+
+Only adds cross-price elasticities relative to product 3 (ηjjn and ηj3n).
+Uses elasticity equation from Nevo (2000) pg 522.
+Need to use the predicted market share (̂sⱼₙ = Xβ)
+"""
+function add_price_elasticities!(reg, df)
+	sort!(df, [:market, :prodid])
+    # Get price coefficient
+    α = -get_coef(reg, "pjn")
+    df.ηjjn = -α * df.pjn .* (1 .- df.sjn_hat)
+    df.ηj3n = @chain df begin
+        filter(:prodid => ==(3), _)
+        combine(:market, [:pjn,:sjn_hat] => ((p,s) -> α*p.*s) => :ηj3n)
+        leftjoin(df[df.prodid .!=3,[:market,:prodid]], _, on = :market)
+        leftjoin(df, _, on = [:market, :prodid])
+        sort([:market, :prodid])
+		_[!,:ηj3n]
+	end
+    add_marginal_costs_NL!(df)
+    return df
+end
+
+# ╔═╡ 8d8614fa-4c88-4984-b8f6-29b863678f2d
+begin
+	df1a = copy(df)
+	# Regress δ on X to estimate α,β that minimizes error term
+	# δ = mean "observed" utility, Xβ-αp = mean predicted utility (α,β are mean utility parameters)
+	reg1a = reg(df1a, @formula(δjn ~ pjn + d1 + d2  + d4 + d5 + x1 + x2), Vcov.cluster(:market))
+	# Predict the shares using Xβ-αp (Nevo Eq. 6)
+	add_predicted_shares!(reg1a, df1a)
+	# Calculate estimated own-price elasticities for each product 
+	# Calculate estimated cross-price elasticity with respect to product 3.
+	add_price_elasticities!(reg1a, df1a)
+end;
+
+# ╔═╡ 7ab92590-e8ca-4d71-976a-fec60e8c2762
+@chain df1a begin
+	groupby(:prodid)
+	combine(:ηjjn => mean => :ηjj, :ηj3n => mean => :ηj3)
+	latexify(_, fmt=FancyNumberFormatter(3))
+end
+
+# ╔═╡ abf4985a-206c-49bb-ab93-cd684e2740fd
+begin
+	df1b = copy(df)
+	# Regress δ on X to estimate α,β that minimizes error term
+	# δ = mean "observed" utility, Xβ-αp = mean predicted utility (α,β are mean utility parameters)
+	reg1b_ss = reg(df1b, @formula(δjn ~ (pjn ~ w1 + w2) + d1 + d2  + d4 + d5 + x1 + x2), Vcov.cluster(:market))
+	# Predict the shares using Xβ-αp (Nevo Eq. 6)
+	add_predicted_shares!(reg1b_ss, df1b)
+	# Calculate estimated own-price elasticities for each product 
+	# Calculate estimated cross-price elasticity with respect to product 3.
+	add_price_elasticities!(reg1b_ss, df1b)
+end;
+
+# ╔═╡ 33b0af57-fe9f-4e34-812e-8a2d16c6507f
+reg1b_ss
+
+# ╔═╡ 5bbbd549-4b93-4e09-abec-2ba2c419dd39
+@chain df1b begin
+	groupby(:prodid)
+	combine(:ηjjn => mean => :ηjj, :ηj3n => mean => :ηj3)
+	# rename(:ηjj => :ηⱼⱼ, :ηj3 => :ηⱼ₃)
+	latexify(_, fmt=FancyNumberFormatter(3))
+end
+
+# ╔═╡ 623d6cc9-649f-49c0-a902-e198976a7abd
+begin
+	df1c = copy(df)
+	# Create instrument: avg characteristics of other products
+	add_avg_characteristics!(df1c)
+	# Regress δ on X to estimate α,β that minimizes error term
+	# δ = mean "observed" utility, Xβ-αp = mean predicted utility (α,β are mean utility parameters)
+	reg1c = reg(df1c, @formula(δjn ~ (pjn ~ x1_avg + x2_avg) + d1 + d2  + d4 + d5 + x1 + x2), Vcov.cluster(:market))
+	# Predict the shares using Xβ-αp (Nevo Eq. 6)
+	add_predicted_shares!(reg1c, df1c)
+	# Calculate estimated own-price elasticities for each product 
+	# Calculate estimated cross-price elasticity with respect to product 3.
+	add_price_elasticities!(reg1c, df1c)
+	reg1c
+end
+
+# ╔═╡ 788a4959-f875-48ae-8be6-f14de1f5bf0b
+reg1c_fs = reg(df1c, @formula(pjn ~ x1_avg + x2_avg + d1 + d2  + d4 + d5 + x1 + x2), Vcov.cluster(:market))
 
 # ╔═╡ ac7e93d1-2471-40a3-a4a3-33ac2f6a4c93
 """Return Nested Logit price elasticities using dataframe and BLP Eq 28 regression results."""
@@ -774,13 +783,7 @@ html"<br><br><br><br><br><br><br><br>"
 md"# QUESTION 3: MARGINAL COSTS"
 
 # ╔═╡ 61de6d27-093c-4798-bb62-93f5bd15887c
-md"Current code development in ps2.jl. Will be moved here once working.
 
-Need to:
-- figure out how to estimate marginal costs...
-
-See ps2.jl
-"
 
 # ╔═╡ ed73f930-0d7c-4c46-82a9-a10a30d949cf
 md"""
@@ -795,11 +798,13 @@ So using our demand-side estimates of $\eta_{jj}$ for the four Nested Logit mode
 md"""
 In the table above, "MC<0\_x" columns show the share of observations from estimate (x) that were negative, and "MC>p\_x" columns show the share of observations from estimate (x) that were above the price of the product. We see that marginal costs from parts (d) and (e) seem to be the most reasonable based on few or no observations that have negative marginal costs. But part (d) also has marginal cost estimates that are above price because the own-price elasticity estimates were positive (this results from the estimate of α from that part being negative). So part (e) seems to be the most reasonable estimate because it has both few negative marginal costs and no marginal costs above price. Part (b) also seems reasonable but likely suffers from endogeneity of prices and within-nest share.
 
-One missing part from these analyses is standard errors, which would tell us if these MC estimates were significantly negative or above price. If we look at the OLS Nested Logit results from part (b), we can see the average marginal cost estimate for the observations that have a negative estimate is only -\$2.61, compared to an average positive marginal cost of \$14 (See below table). It is possible that many of the observations that have negative marginal costs are not significantly different from a small positive number.
+One missing part from these analyses is standard errors, which would tell us if these MC estimates were significantly negative or above price. If we look at the OLS Nested Logit results from part (b), we can see the average marginal cost estimate for the observations that have a negative estimate is only -\$1.97, compared to an average positive marginal cost of \$14 (See below table). It is possible that many of the observations that have negative marginal costs are not significantly different from a small positive number.
 
 Because the formula for marginal costs is 
 $\widetilde{MC}_j = p_j\left(1 + \dfrac{1}{\eta_{jj}}\right)$, 
 a mechanical reason that marginal costs would be negative is that the own-price elasticity is between 0 and -1 (inelastic). If $\eta_{jj}\in (-1,0)$ then $(1 + \frac{1}{\eta_{jj}}) < 0$ and marginal cost would be negative. This seems to be implied by the model: if I face a very inelastic demand, then the models says I should be charging a markup even larger than the market price. This is probably due to the assumption that the firms are independent oligopolies and take each other's prices as given, when really there may be some form of collusion or are price takers perhaps.
+
+Also note that IV models (c) and (d) both produce estimates of $\sigma$ that are outside the (0,1) range, thus are not consistent with utility maximization. These $\sigma$ estimates impact the marginal cost estimation via the calculation of own-price elasticity.
 """
 
 # ╔═╡ 9ecfd7bd-ecab-40af-bbde-6359295cae44
@@ -851,11 +856,153 @@ html"<br><br><br><br><br><br><br><br>"
 # ╔═╡ f6ea7896-47a0-4763-8b5d-47e2bb4b68f9
 md"# QUESTION 4: PRICING EQUATIONS"
 
+# ╔═╡ b76b623d-322a-48a2-aaed-1a88dd4208aa
+md"## (a) Logit price increases when firms 2 and 3 merge"
+
+# ╔═╡ ea577f5f-f53f-4233-9500-a34f67057d1f
+md"## (b) Nested logit price increases when firms 2 and 3 merge"
+
+# ╔═╡ 8846cc99-8ea0-427b-8e89-9b523b79b3c0
+md"## (c) Differences and discussion"
+
+# ╔═╡ 592e1ea8-9ed0-4974-9006-8a51b18bb354
+md"""
+In both logit and nested logit, the price increase for product 3 is larger than the price increase for product 2. However, the nested logit price increases are much larger than the logit price increases (about 3 times larger). In logit, all firms are equal competitors, but in nested logit, firms in the same nest are much closer substitues (and thus much more competitive rivals). In the logit model then, when products 2 and 3 are merged into the same firm, consumers can more easily substitute to any other goods. But in nested logit, products outside the nest are less substitutable, so if products 2 and 3 can merge into the same firm, cross-price elasticities with goods outside the nest are less, and the firm could push both prices higher and keep a larger market share than under the logit model.
+
+Both specifications have problems, but I am tempted to think the nested logit results are more realistic as long as the nests I defined ex ante reflect the way the firms think of their close rivals. If they also think of products 1, 4, and 5 as less substitutable, then the would be more likely to raise p2 and p3 prices because they have a captive market. However, these results strongly rely on the ex ante specification of the nests.
+"""
+
+# ╔═╡ 0f986b97-a5a7-4d66-94e4-ef1afb13e0b0
+md"## Question 4 Functions"
+
+# ╔═╡ d6494a82-95c0-459b-9390-b212d2ea96b2
+"""Return new p2 or p3 if product id is 2 or 3, respectively. Otherwise, return old price p."""
+p2p3(prodid, p2, p3, p) = ifelse(prodid == 2, p2, ifelse(prodid == 3, p3, p))
+
+# ╔═╡ f21051a8-1242-4a00-b5fc-8f08da753219
+"""Replace observed prices for products 2 and 3 in single-market dataframe (5 rows) with input p2 and p3"""
+replace_p2p3(df, p2, p3) = @transform(df, :pjn = p2p3.(:prodid, p2, p3, :pjn))
+
+# ╔═╡ bb398792-7b3a-49aa-b109-949087031242
+"""Estimate Logit mean utility as a function of new p2, p3, given data and IV estimates"""
+δ(df, p2, p3) = @chain df replace_p2p3(p2, p3) predict(reg1b_ss, _)
+
+# ╔═╡ df90d88f-5796-4297-83d1-cb922b029357
+"""Return percentage point increase from old to new"""
+percent_inc(p_old, p_new) = (p_new / p_old - 1) * 100
+
+# ╔═╡ fce34951-10c1-4abd-a246-1e1f2ddfd978
+"""Estimate Nested Logit δ as a function of new p2, p3, given data and IV estimates.
+    Removing the σ⋅log(sⱼₕₙ) term from the regression prediction to get δ instead of ln(sj/s0)
+"""
+δNL(df, p2, p3) = @chain df replace_p2p3(p2, p3) @transform(:sjhn = 1) predict(reg2e_ss, _)
+
+# ╔═╡ 8efaf071-fb8b-4e82-a0a6-f44ecb04b23b
+"""Estimate Nested Logit market shares of goods 2 and 3 for a single-market dataframe, as a function of new p2, p3"""
+function merger_NL(d, p2, p3)
+    σ = get_coef(reg2e_ss, "log(sjhn)")
+    df = copy(d)
+    df.δ_hat = δNL(d, p2, p3)
+    @chain df begin
+        groupby(:group)
+        @transform!(:Dh = sum(exp.(:δ_hat / (1-σ))))
+        @transform!(:D_sum = sum(:Dh.^(1-σ)) + 1)
+        @transform!(:sjn_hat = exp.(:δ_hat / (1-σ)) ./ (:Dh.^σ .* :D_sum))
+    end
+    df.sjn_hat[2:3]
+end
+
+# ╔═╡ f7ee4337-c70f-4bf5-bc9d-cb8bcaf5f2b2
+begin
+	"""Estimate market shares s2,s3 based on p2, p3 -> δ(p2,p3)
+	    type = "logit", "nested logit"
+	    Need to set df.type
+	"""
+	function s(df, p2, p3)
+	    type = first(df.type)
+	    if type == "logit"
+	        eq6(δ(df, p2, p3))[2:3]
+	    elseif type == "nested logit"
+	        merger_NL(df, p2, p3) 
+	    end
+	end
+end
+
+# ╔═╡ 2289b456-e158-4bfc-9b79-b81435dd37ff
+begin
+	s2(p, df) = s(df, p...)[1]
+	s3(p, df) = s(df, p...)[2]
+end
+
+# ╔═╡ 81a2deec-0f6f-45e0-b109-3d921c57e351
+begin
+	"""Estimate price derivatives of market shares at p2,p3"""
+	mygrad(f,x,df) = FiniteDifferences.grad(central_fdm(5, 1), x -> f(x, df), x)
+	∂s2∂p2(p, df) = mygrad(s2, p, df)[1][1];  ∂s2∂p3(p, df) = mygrad(s2, p, df)[1][2]
+	∂s3∂p2(p, df) = mygrad(s3, p, df)[1][1];  ∂s3∂p3(p, df) = mygrad(s3, p, df)[1][2]
+end
+
+# ╔═╡ 5e2ff744-67d6-46a3-a8a5-09807e6568ae
+"""Residuals function to find root -- find p2,p3 that sets F[1] = 0 = F[2]"""
+function price_eqations!(F, p, df)
+    mc = df.mc[2:3]
+    F[1] = s2(p, df) + (p[1] - mc[1])*∂s2∂p2(p, df) + (p[2] - mc[2])*∂s3∂p2(p, df)
+    F[2] = s3(p, df) + (p[1] - mc[1])*∂s2∂p3(p, df) + (p[2] - mc[2])*∂s3∂p3(p, df)
+end
+
+# ╔═╡ ff3304d9-7f18-48b7-b7fc-da59599fe894
+"""Return vector of 5 product prices after merger of firms 2 and 3"""
+function p_soln(df)
+    sort!(df, :prodid)
+    p0 = df.pjn[2:3]
+    # Solve system of equations for (p2,p3), using finite differencing
+    f!(F, p) = price_eqations!(F, p, df)
+    p2p3 = nlsolve(f!, p0).zero
+    return [df.pjn[1]; p2p3; df.pjn[4:5]]
+end
+
+# ╔═╡ 9f488548-36b2-4d96-a245-3c4478640c2d
+begin
+	df1z = copy(df1b)
+	df1z[!, :type] .= "logit"
+	# Add new prices for products 2 and 3 after merger of firms 2 and 3
+	df1z.pjn_merge = combine(p_soln, groupby(df1z, :market)).x1
+	# Add percentage point increases in prices
+	@chain df1z @transform!(:pjn_incr = percent_inc.(:pjn, :pjn_merge))
+	# Calculate average percentage point increase for products 2 and 3
+	@chain df1z begin
+	    @subset(:prodid .∈ [2:3])
+	    groupby(:prodid)
+	    @combine($("Mean Price Increase (ppt)") = mean(:pjn_incr))
+	    latexify(fmt=FancyNumberFormatter(3))
+	end
+end
+
+# ╔═╡ 1fb97940-219b-445e-a08d-35b140ee2689
+begin
+	df2z = copy(df2e)
+	df2z[!, :type] .= "nested logit"
+	# Add new prices for products 2 and 3 after merger of firms 2 and 3
+	df2z.pjn_merge = combine(p_soln, groupby(df2z, :market)).x1
+	# Add percentage point increases in prices
+	@chain df2z @transform!(:pjn_incr = percent_inc.(:pjn, :pjn_merge))
+	# Calculate average percentage point increase for products 2 and 3
+	@chain df2z begin
+	    @subset(:prodid .∈ [2:3])
+	    groupby(:prodid)
+	    @combine($("Mean Price Increase (ppt)") = mean(:pjn_incr))
+	    latexify(fmt=FancyNumberFormatter(3))
+	end
+end
+
 # ╔═╡ 1068fde5-e5c2-40ba-b654-f18bb861f329
 html"<br><br><br><br><br><br><br><br>"
 
 # ╔═╡ 79ba563c-0792-4916-b23b-832f28e6d81d
 md"# QUESTION 5: RANDOM COEFFICIENTS MODEL"
+
+# ╔═╡ 8c22fac2-5375-43fb-90bb-a8186955c578
+
 
 # ╔═╡ 04e8f596-4389-40e9-92de-5f88e993c880
 html"<br><br><br><br><br><br><br><br>"
@@ -883,10 +1030,12 @@ CovarianceMatrices = "60f91f6f-d783-54cb-84f9-544141854719"
 DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
 DataFramesMeta = "1313f7d8-7da2-5740-9ea0-a2ca25f37964"
 Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
+FiniteDifferences = "26cc04aa-876d-5657-8c51-4c34ba976000"
 FixedEffectModels = "9d5cd8c9-2029-5cab-9928-427838db53e3"
 GLM = "38e38edf-8417-5370-95a0-9cbb8c7f171a"
 Latexify = "23fbe1c1-3f47-55db-b15f-69d7ec21a316"
 Luxor = "ae8d54c2-7ccd-5906-9d76-62fc9837b5bc"
+NLsolve = "2774e3e8-f4cf-5e23-947b-6d7e65073b56"
 OrderedCollections = "bac558e1-5e72-5ebc-8fee-abe8a469f55d"
 PlutoUI = "7f904dfe-b85e-4ff6-b463-dae2292396a8"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
@@ -903,10 +1052,12 @@ CovarianceMatrices = "~0.10.4"
 DataFrames = "~1.3.4"
 DataFramesMeta = "~0.11.0"
 Distributions = "~0.25.58"
+FiniteDifferences = "~0.12.24"
 FixedEffectModels = "~1.6.5"
 GLM = "~1.7.0"
 Latexify = "~0.15.15"
 Luxor = "~3.2.0"
+NLsolve = "~4.5.1"
 OrderedCollections = "~1.4.1"
 PlutoUI = "~0.7.38"
 ShiftedArrays = "~1.0.0"
@@ -960,6 +1111,12 @@ deps = ["Artifacts", "CompilerSupportLibraries_jll", "JLLWrappers", "Libdl", "Op
 git-tree-sha1 = "5ba6c757e8feccf03a1554dfaf3e26b3cfc7fd5e"
 uuid = "68821587-b530-5797-8361-c406ea357684"
 version = "3.5.1+1"
+
+[[deps.ArrayInterfaceCore]]
+deps = ["LinearAlgebra", "SparseArrays", "SuiteSparse"]
+git-tree-sha1 = "40debc9f72d0511e12d817c7ca06a721b6423ba3"
+uuid = "30b0a656-2188-435a-8636-2ec0e6a096e2"
+version = "0.1.17"
 
 [[deps.Artifacts]]
 uuid = "56f22d72-fd6d-98f1-02f0-08ddc0907c33"
@@ -1061,6 +1218,12 @@ git-tree-sha1 = "08c8b6831dc00bfea825826be0bc8336fc369860"
 uuid = "861a8166-3701-5b0c-9a16-15d98fcdc6aa"
 version = "1.0.2"
 
+[[deps.CommonSubexpressions]]
+deps = ["MacroTools", "Test"]
+git-tree-sha1 = "7b8a93dba8af7e3b42fecabf646260105ac373f7"
+uuid = "bbf7d656-a473-5ed7-a52c-81e309532950"
+version = "0.3.0"
+
 [[deps.Compat]]
 deps = ["Base64", "Dates", "DelimitedFiles", "Distributed", "InteractiveUtils", "LibGit2", "Libdl", "LinearAlgebra", "Markdown", "Mmap", "Pkg", "Printf", "REPL", "Random", "SHA", "Serialization", "SharedArrays", "Sockets", "SparseArrays", "Statistics", "Test", "UUIDs", "Unicode"]
 git-tree-sha1 = "b153278a25dd42c65abbf4e62344f9d22e59191b"
@@ -1070,6 +1233,12 @@ version = "3.43.0"
 [[deps.CompilerSupportLibraries_jll]]
 deps = ["Artifacts", "Libdl"]
 uuid = "e66e0078-7015-5450-92f7-15fbd957f2ae"
+
+[[deps.ConstructionBase]]
+deps = ["LinearAlgebra"]
+git-tree-sha1 = "fb21ddd70a051d882a1686a5a550990bbe371a95"
+uuid = "187b0558-2788-49d3-abe0-74a17ed4e7c9"
+version = "1.4.1"
 
 [[deps.Contour]]
 deps = ["StaticArrays"]
@@ -1135,6 +1304,18 @@ deps = ["InverseFunctions", "Test"]
 git-tree-sha1 = "80c3e8639e3353e5d2912fb3a1916b8455e2494b"
 uuid = "b429d917-457f-4dbc-8f4c-0cc954292b1d"
 version = "0.4.0"
+
+[[deps.DiffResults]]
+deps = ["StaticArrays"]
+git-tree-sha1 = "c18e98cba888c6c25d1c3b048e4b3380ca956805"
+uuid = "163ba53b-c6d8-5494-b064-1a9d43ac40c5"
+version = "1.0.3"
+
+[[deps.DiffRules]]
+deps = ["IrrationalConstants", "LogExpFunctions", "NaNMath", "Random", "SpecialFunctions"]
+git-tree-sha1 = "992a23afdb109d0d2f8802a30cf5ae4b1fe7ea68"
+uuid = "b552c78f-8df3-52c6-915a-8e097449b14b"
+version = "1.11.1"
 
 [[deps.Distances]]
 deps = ["LinearAlgebra", "SparseArrays", "Statistics", "StatsAPI"]
@@ -1222,6 +1403,18 @@ git-tree-sha1 = "246621d23d1f43e3b9c368bf3b72b2331a27c286"
 uuid = "1a297f60-69ca-5386-bcde-b61e274b549b"
 version = "0.13.2"
 
+[[deps.FiniteDiff]]
+deps = ["ArrayInterfaceCore", "LinearAlgebra", "Requires", "Setfield", "SparseArrays", "StaticArrays"]
+git-tree-sha1 = "5a2cff9b6b77b33b89f3d97a4d367747adce647e"
+uuid = "6a86dc24-6348-571c-b903-95158fe2bd41"
+version = "2.15.0"
+
+[[deps.FiniteDifferences]]
+deps = ["ChainRulesCore", "LinearAlgebra", "Printf", "Random", "Richardson", "SparseArrays", "StaticArrays"]
+git-tree-sha1 = "0ee1275eb003b6fc7325cb14301665d1072abda1"
+uuid = "26cc04aa-876d-5657-8c51-4c34ba976000"
+version = "0.12.24"
+
 [[deps.FixedEffectModels]]
 deps = ["DataFrames", "FixedEffects", "LinearAlgebra", "Printf", "Reexport", "Statistics", "StatsBase", "StatsFuns", "StatsModels", "Tables", "Vcov"]
 git-tree-sha1 = "bd741fd9b058179064ede5adaef9424d6ebbf946"
@@ -1251,6 +1444,12 @@ deps = ["Printf"]
 git-tree-sha1 = "8339d61043228fdd3eb658d86c926cb282ae72a8"
 uuid = "59287772-0a20-5a39-b81b-1366585eb4c0"
 version = "0.4.2"
+
+[[deps.ForwardDiff]]
+deps = ["CommonSubexpressions", "DiffResults", "DiffRules", "LinearAlgebra", "LogExpFunctions", "NaNMath", "Preferences", "Printf", "Random", "SpecialFunctions", "StaticArrays"]
+git-tree-sha1 = "187198a4ed8ccd7b5d99c41b69c679269ea2b2d4"
+uuid = "f6369f11-7733-5829-9624-2563aa707210"
+version = "0.10.32"
 
 [[deps.FreeType2_jll]]
 deps = ["Artifacts", "Bzip2_jll", "JLLWrappers", "Libdl", "Pkg", "Zlib_jll"]
@@ -1552,6 +1751,12 @@ git-tree-sha1 = "7f3efec06033682db852f8b3bc3c1d2b0a0ab066"
 uuid = "38a345b3-de98-5d2b-a5d3-14cd9215e700"
 version = "2.36.0+0"
 
+[[deps.LineSearches]]
+deps = ["LinearAlgebra", "NLSolversBase", "NaNMath", "Parameters", "Printf"]
+git-tree-sha1 = "f27132e551e959b3667d8c93eae90973225032dd"
+uuid = "d3d80556-e9d4-5f37-9878-2ab0fcc64255"
+version = "7.1.1"
+
 [[deps.LinearAlgebra]]
 deps = ["Libdl", "libblastrampoline_jll"]
 uuid = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
@@ -1625,6 +1830,18 @@ deps = ["Arpack", "LinearAlgebra", "SparseArrays", "Statistics", "StatsBase"]
 git-tree-sha1 = "6d019f5a0465522bbfdd68ecfad7f86b535d6935"
 uuid = "6f286f6a-111f-5878-ab1e-185364afe411"
 version = "0.9.0"
+
+[[deps.NLSolversBase]]
+deps = ["DiffResults", "Distributed", "FiniteDiff", "ForwardDiff"]
+git-tree-sha1 = "50310f934e55e5ca3912fb941dec199b49ca9b68"
+uuid = "d41bc354-129a-5804-8e4c-c37616107c6c"
+version = "7.8.2"
+
+[[deps.NLsolve]]
+deps = ["Distances", "LineSearches", "LinearAlgebra", "NLSolversBase", "Printf", "Reexport"]
+git-tree-sha1 = "019f12e9a1a7880459d0173c182e6a99365d7ac1"
+uuid = "2774e3e8-f4cf-5e23-947b-6d7e65073b56"
+version = "4.5.1"
 
 [[deps.NaNMath]]
 git-tree-sha1 = "b086b7ea07f8e38cf122f5016af580881ac914fe"
@@ -1705,6 +1922,12 @@ deps = ["Artifacts", "Cairo_jll", "Fontconfig_jll", "FreeType2_jll", "FriBidi_jl
 git-tree-sha1 = "3a121dfbba67c94a5bec9dde613c3d0cbcf3a12b"
 uuid = "36c8627f-9965-5494-a995-c6b170f724f3"
 version = "1.50.3+0"
+
+[[deps.Parameters]]
+deps = ["OrderedCollections", "UnPack"]
+git-tree-sha1 = "34c0e9ad262e5f7fc75b10a9952ca7692cfc5fbe"
+uuid = "d96e819e-fc66-5662-9728-84c9c7592b0a"
+version = "0.12.3"
 
 [[deps.Parsers]]
 deps = ["Dates"]
@@ -1826,6 +2049,12 @@ git-tree-sha1 = "838a3a4188e2ded87a4f9f184b4b0d78a1e91cb7"
 uuid = "ae029012-a4dd-5104-9daa-d747884805df"
 version = "1.3.0"
 
+[[deps.Richardson]]
+deps = ["LinearAlgebra"]
+git-tree-sha1 = "e03ca566bec93f8a3aeb059c8ef102f268a38949"
+uuid = "708f8203-808e-40c0-ba2d-98a6953ed40d"
+version = "1.4.0"
+
 [[deps.Rmath]]
 deps = ["Random", "Rmath_jll"]
 git-tree-sha1 = "bf3188feca147ce108c76ad82c2792c57abe7b1f"
@@ -1861,6 +2090,12 @@ version = "1.3.12"
 
 [[deps.Serialization]]
 uuid = "9e88b42a-f829-5b0c-bbe9-9e923198166b"
+
+[[deps.Setfield]]
+deps = ["ConstructionBase", "Future", "MacroTools", "StaticArraysCore"]
+git-tree-sha1 = "e2cc6d8c88613c05e1defb55170bf5ff211fbeac"
+uuid = "efcf1570-3423-57d1-acb7-fd33fddbac46"
+version = "1.1.1"
 
 [[deps.SharedArrays]]
 deps = ["Distributed", "Mmap", "Random", "Serialization"]
@@ -1901,6 +2136,11 @@ deps = ["LinearAlgebra", "Random", "Statistics"]
 git-tree-sha1 = "cd56bf18ed715e8b09f06ef8c6b781e6cdc49911"
 uuid = "90137ffa-7385-5640-81b9-e52037218182"
 version = "1.4.4"
+
+[[deps.StaticArraysCore]]
+git-tree-sha1 = "ec2bd695e905a3c755b33026954b119ea17f2d22"
+uuid = "1e83bf80-4336-4d27-bf5d-d5a4f845583c"
+version = "1.3.0"
 
 [[deps.Statistics]]
 deps = ["LinearAlgebra", "SparseArrays"]
@@ -2001,6 +2241,11 @@ version = "1.3.0"
 [[deps.UUIDs]]
 deps = ["Random", "SHA"]
 uuid = "cf7118a7-6976-5b1a-9a39-7adc72f591a4"
+
+[[deps.UnPack]]
+git-tree-sha1 = "387c1f73762231e86e0c9c5443ce3b4a0a9a0c2b"
+uuid = "3a884ed6-31ef-47d7-9d2a-63182c4928ed"
+version = "1.0.2"
 
 [[deps.Unicode]]
 uuid = "4ec0a83e-493e-50e2-b9ac-8f72acf5a8f5"
@@ -2269,6 +2514,7 @@ version = "0.9.1+5"
 # ╟─9c1ea9ed-eb8c-46b8-ac3c-cbad05f00147
 # ╟─cada010e-60b8-4eab-8de0-8f89536da67d
 # ╠═be37ada5-3357-4fa8-986e-f87de0e7ab50
+# ╠═57216c6e-c3c8-4b14-93df-a802dbeac33d
 # ╟─3e0d4135-adcd-4f45-ba75-410049d457dd
 # ╠═44c5f655-e059-462b-8afc-386c10bbe7de
 # ╟─3b88301b-f77c-484e-9137-cf53c2668e47
@@ -2276,7 +2522,7 @@ version = "0.9.1+5"
 # ╟─8d8614fa-4c88-4984-b8f6-29b863678f2d
 # ╟─2d54f004-edc0-4abf-ba74-7d7fc1043617
 # ╟─1f8d5083-1660-4ad0-ab30-84235738a350
-# ╠═7ab92590-e8ca-4d71-976a-fec60e8c2762
+# ╟─7ab92590-e8ca-4d71-976a-fec60e8c2762
 # ╟─48ab0eb3-ee84-45c6-b95a-aed46bc9b51a
 # ╟─f67777aa-db17-415d-96e7-57a0d3a919ec
 # ╟─e549f127-48da-4999-b8b1-0254cdf46387
@@ -2291,12 +2537,12 @@ version = "0.9.1+5"
 # ╟─410b7689-cc78-4370-8a9c-0c39853ad136
 # ╟─37f2a06b-c93e-46a8-99fa-9f3382f662c8
 # ╟─a385f796-2dbf-439d-a5a5-d13fc9d0d679
-# ╠═5bbbd549-4b93-4e09-abec-2ba2c419dd39
+# ╟─5bbbd549-4b93-4e09-abec-2ba2c419dd39
 # ╟─1c4c8051-33e7-4b0c-9275-1fe9610f665c
 # ╟─f603af4a-a7df-4e61-ae55-021d0a1fbf9d
 # ╟─95b6cb44-9123-426a-a2b2-d0547ee01dbc
 # ╟─206c151c-854a-4b11-aa7c-2623d023deb2
-# ╟─4e3c0446-8da6-4784-b5f6-11c763ad96dc
+# ╠═4e3c0446-8da6-4784-b5f6-11c763ad96dc
 # ╟─1f4fdbf0-fb2c-4333-a96b-e6bbf93fa403
 # ╟─9cdce6c5-e001-4e5a-8975-fc11fe5d3b34
 # ╟─c1e64762-2357-4104-89d4-0df3a62cb5e6
@@ -2304,12 +2550,13 @@ version = "0.9.1+5"
 # ╟─52ff7b3b-d17c-4db7-b852-c6c2e3bfa74e
 # ╟─560251c9-f35c-4e82-ae70-364dc9213fec
 # ╟─b9d8c922-803c-4d72-b384-c9eb18a69b27
+# ╟─20617897-56df-4403-bfe6-bea08006bdc0
 # ╟─2e5a61d5-bc03-4bb7-91d0-6d5078704954
 # ╟─f6bc30a5-f0a2-49a8-8a80-d84fa98cb745
 # ╟─9377ad52-4063-4c40-8f4b-17fb598ac15d
 # ╟─7671300e-5a0b-479e-a706-5eb05aa25bff
 # ╟─d6793ff1-921e-4e19-99f6-8b54b6711067
-# ╟─235a59d1-794d-449e-8ef6-b0ac5926fc9b
+# ╠═235a59d1-794d-449e-8ef6-b0ac5926fc9b
 # ╟─2cfcaec3-eafd-40a6-858d-9576deaa0624
 # ╟─e08ee3cb-ab67-4b36-b7be-549a00aeb732
 # ╟─52fd25ae-965e-4e53-85da-6701a64354c6
@@ -2329,7 +2576,7 @@ version = "0.9.1+5"
 # ╟─9e5e2d9b-2f3d-4bae-9bd1-86d7ea7cf9c3
 # ╟─6cfe7887-830a-4742-b4c9-12b8ccbfb2f0
 # ╟─cd1a11b7-4817-4dec-9b9d-c879929cb228
-# ╠═185ac19e-eaa6-4823-8e3f-5292f6271029
+# ╟─185ac19e-eaa6-4823-8e3f-5292f6271029
 # ╟─8a0bc819-5c2f-49b9-90ad-502aeec85652
 # ╟─df3aa3cf-5887-4032-b417-0ebd574d950c
 # ╟─2407037f-4b0a-40e8-8175-a79157374c2f
@@ -2363,7 +2610,7 @@ version = "0.9.1+5"
 # ╟─b6f09745-9699-4345-ad80-5b71c40ab402
 # ╠═61de6d27-093c-4798-bb62-93f5bd15887c
 # ╟─ed73f930-0d7c-4c46-82a9-a10a30d949cf
-# ╠═05dda9bf-3f66-4ce2-a3d5-88dbbe3ba6ef
+# ╟─05dda9bf-3f66-4ce2-a3d5-88dbbe3ba6ef
 # ╟─787f80b6-5293-4777-996a-a3a8a63b7e8c
 # ╟─9ecfd7bd-ecab-40af-bbde-6359295cae44
 # ╟─0af72537-c22d-4909-b7a6-58b35fa4ba99
@@ -2371,8 +2618,27 @@ version = "0.9.1+5"
 # ╟─8d59a25b-f4aa-48fb-9bac-aff90a856030
 # ╟─308984fd-cc90-4940-987d-984d3421fba0
 # ╟─f6ea7896-47a0-4763-8b5d-47e2bb4b68f9
+# ╟─b76b623d-322a-48a2-aaed-1a88dd4208aa
+# ╟─9f488548-36b2-4d96-a245-3c4478640c2d
+# ╟─ea577f5f-f53f-4233-9500-a34f67057d1f
+# ╟─1fb97940-219b-445e-a08d-35b140ee2689
+# ╟─8846cc99-8ea0-427b-8e89-9b523b79b3c0
+# ╟─592e1ea8-9ed0-4974-9006-8a51b18bb354
+# ╟─0f986b97-a5a7-4d66-94e4-ef1afb13e0b0
+# ╟─d6494a82-95c0-459b-9390-b212d2ea96b2
+# ╟─f21051a8-1242-4a00-b5fc-8f08da753219
+# ╟─bb398792-7b3a-49aa-b109-949087031242
+# ╟─f7ee4337-c70f-4bf5-bc9d-cb8bcaf5f2b2
+# ╠═2289b456-e158-4bfc-9b79-b81435dd37ff
+# ╠═81a2deec-0f6f-45e0-b109-3d921c57e351
+# ╟─5e2ff744-67d6-46a3-a8a5-09807e6568ae
+# ╟─ff3304d9-7f18-48b7-b7fc-da59599fe894
+# ╟─df90d88f-5796-4297-83d1-cb922b029357
+# ╟─fce34951-10c1-4abd-a246-1e1f2ddfd978
+# ╟─8efaf071-fb8b-4e82-a0a6-f44ecb04b23b
 # ╟─1068fde5-e5c2-40ba-b654-f18bb861f329
 # ╟─79ba563c-0792-4916-b23b-832f28e6d81d
+# ╠═8c22fac2-5375-43fb-90bb-a8186955c578
 # ╟─04e8f596-4389-40e9-92de-5f88e993c880
 # ╟─79b95d28-3666-449b-b77d-a6fa46957e03
 # ╟─56a3faff-ba43-479c-bf19-22e49b6b0ec5

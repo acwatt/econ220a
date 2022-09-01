@@ -26,6 +26,7 @@ Citations:
 # For Stats stuff
 using Statistics, StatsBase, StatsPlots, StatsFuns, GLM
 using CovarianceMatrices, StatsModels, FixedEffectModels
+using FiniteDifferences, NLsolve
 # For dataframes
 using DataFrames, CSV, DataFramesMeta
 using ShiftedArrays
@@ -119,6 +120,7 @@ function add_price_elasticities!(reg, df)
         sort([:market, :prodid])
 		_[!,:ηj3n]
 	end
+    add_marginal_costs_NL!(df)
     return df
 end
 
@@ -155,6 +157,11 @@ function add_ingroup_share!(df)
 end
 
 
+"""Add estimated marginal costs to dataframe.
+    Requires the own-price elasticity :ηjjn column.
+"""
+add_marginal_costs_NL!(df) = @transform!(df, :mc = :pjn .* (1 .+ 1 ./ :ηjjn))
+
 
 # Add δ (mean utility levels)
 df = add_logit_depvar!(df)
@@ -162,9 +169,9 @@ df = add_logit_depvar!(df)
 df = add_ingroup_share!(df)
 
 
+
 #*#############################################################################
 #*####################### QUESTION 1 WORK #####################################
-
 
 #!############ PART A
 #! Estimate an aggregate Logit model using OLS (Product 3 is reference group)
@@ -238,6 +245,7 @@ reg1b_fs = reg(df, @formula(pjn ~ w1 + w2 + d1 + d2  + d4 + d5 + x1 + x2), Vcov.
 # Fist stage average characteristic instruments of IV model
 reg1c_fs = reg(df1c, @formula(pjn ~ x1_avg + x2_avg + d1 + d2  + d4 + d5 + x1 + x2), Vcov.cluster(:market))
 
+#=
 repl_dict = Dict("δjn" => "\$\\delta_{jn}\$", "_avg" => "\$_{\\text{avg}}\$")
 regtable(reg1a,reg1b_ss,reg1c; renderSettings = asciiOutput(), regression_statistics = [:nobs, :r2, :f_kp], transform_labels = repl_dict)
 regtable(reg1a,reg1b_ss,reg1c; renderSettings = latexOutput("1-secondstages.tex"), regression_statistics = [:nobs, :r2, :f_kp], transform_labels = repl_dict)
@@ -255,14 +263,7 @@ regtable(reg1a,reg1b_ss,reg1c,reg1b_fs,reg1c_fs;
          regression_statistics = [:nobs, :r2, :f], 
          transform_labels = repl_dict,
          groups=["2nd Stage" "2nd Stage" "2nd Stage" "1st Stage" "1st Stage"])
-
-
-# Create table of price elasticities
-
-
-
-
-
+=#
 
 
 
@@ -380,11 +381,12 @@ end
 """Estimate Nested Logit group share denominator ∑ₕ Dₕ (BLP Eq 24).
     D_sum = ∑ₕ Dₕ in each market
     requires δ_hat = X'β  in df
+    Note: h=0 is outside group, and D₀ = 1 (since δ₀ is normalized to 0, and e⁰=1)
 """
 function add_market_demoninator_NL!(df, σ)
     @chain df begin
         groupby(:market)
-        @combine(:D_sum = sum(:Dh.^(1-σ)))
+        @combine(:D_sum = sum(:Dh.^(1-σ)) + 1)
         @select(:market, :D_sum)
         leftjoin!(df, _, on=:market)
     end
@@ -447,10 +449,14 @@ function cross_price_elasticity_NL(α, σ, p3, s3, sjh, sj, productID, nestID)
         return α*s3*p3
     end
 end
+"""Nested Logit cross-price-derivative of market share (within nest)"""
+∂sⱼ∂pₖ(α, σ, sⱼ, sⱼ₍ₕ₎, sₖ) = α*sₖ*(σ/(1-σ) * sⱼ₍ₕ₎ + sⱼ)
 
 
 """Return Nested Logit own-price elasticity"""
 own_price_elasticity_NL(α, σ, pj, sjh, sj) = -α*pj * (1/(1-σ)  - σ/(1-σ)*sjh - sj)
+"""Nested Logit own-price-derivative of market share"""
+∂sⱼ∂pⱼ(α, σ, sⱼ, sⱼ₍ₕ₎) = -α*sⱼ*(1/(1-σ) - σ/(1-σ)*sⱼ₍ₕ₎ - sⱼ)
 
 
 """Estimate own-price and cross-price elasticities of the predicted market shares for Nested Logit; add columns.
@@ -526,10 +532,7 @@ function add_avg_characteristics_NL!(df)
 end
 
 
-"""Add estimated marginal costs to dataframe.
-    Requires the own-price elasticity :ηjjn column.
-"""
-add_marginal_costs_NL!(df) = @transform!(df, :mc = :pjn .* (1 .+ 1 ./ :ηjjn))
+
 
 
 
@@ -656,10 +659,6 @@ estimate_price_elasticities_NL!(df2e, reg2e_ss)
 
 
 
-
-
-
-
 #?==============================================================================
 #?==============================================================================
 #?==============================================================================
@@ -714,9 +713,11 @@ end
 #!              NEXT
 #!#####################################################################################################################
 #=
-
-
+- Check if I included group 0 (outside) in the estimation of s_g (or maybe just the denomintator)
+- editing add_market_demoninator_NL! to add outside group in denominator
 =#
+
+
 
 
 
@@ -743,9 +744,142 @@ end
 #?==============================================================================
 #?==============================================================================
 #?==============================================================================
+#=
+- need to solve for p in system of equations (can group then subset to just goods 2 and 3, then add new prices as vector solution to matrix equation)
+- Given α,σ,β,X,p₁,p₄,p₅, can write market and within nest shares as functions of p₂ and p₃ (this includes replacing p2,p3 in DF and using -predict-)
+- Need full vector of X's used in IV reg
+=#
 
 
 
+#! Goal: predict new prices after firms 2 and 3 merge, for each market
+#=BLP 1995 Eq 3.3 has the FOC for multi-product firms
+  Using the estimated Nested Logit parameters, predict new p2,p3 price equilibrium
+  assuming p1,p4,p5, marginal costs, product characteristics, and estimated parameters are fixed
+  Need to solve a system of 2 equations (2 FOC's for the merged firm, w.r.t. p2 and p3)
+  These are non-linear equations -- taking p2 and p3 derivatives of s2 and s3 (market shares)
+
+  Have data on p1, p3, p4, X, W, D for all products
+  Have reg estimates of α, β, σ
+  Predict δⱼ:     Function of p2, p3, reg: replace p2, p3 in DF and predict δ
+  Predict Dh:     Function of δⱼ, σ
+  Predict Dh sum: Function of Dh, σ
+  Predict sj|h:   Function of δⱼ, Dh, σ
+  Predict Sj:     Function of δ, Dh, Dh sum, σ
+  Estimate ∂sⱼ/∂pₖ for use in BLP equation 3.3
+  Predict new prices and % change from old prices
+
+  I have the regression coefficients from IV part E
+  Write a function of p2,p3 that equals 0, solved by NLsolve, using observed p2,p3 as starting points
+  Try using nlsolve(f!, initial_x, autodiff = :forward)
+  where f!(F, x*) = 0 and f!(F,x) = F[1],F[2] = somefunctionof(x[1], x[2])
+   --> autodiff did not work because using `predict()`. Would probably work
+       if I extracted the matrix and used matrix multiplication
+       Sticking with finite difference numerical differentiation instead
+       Should be able to apply to any sⱼ function of p
+=#
+
+#! LOGIT -- use reg1b_ss for δ predictions
+
+"""Return new p2 or p3 if product id is 2 or 3, respectively. Otherwise, return old price p."""
+p2p3(prodid, p2, p3, p) = ifelse(prodid == 2, p2, ifelse(prodid == 3, p3, p))
+"""Replace observed prices for products 2 and 3 in single-market dataframe (5 rows) with input p2 and p3"""
+replace_p2p3(df, p2, p3) = @transform(df, :pjn = p2p3.(:prodid, p2, p3, :pjn))
+
+"""Estimate Logit mean utility as a function of new p2, p3, given data and IV estimates"""
+δ(df, p2, p3) = @chain df replace_p2p3(p2, p3) predict(reg1b_ss, _)
+
+"""Estimate market shares s2,s3 based on p2, p3 -> δ(p2,p3)
+    type = "logit", "nested logit"
+    Need to set df.type
+"""
+function s(df, p2, p3)
+    type = first(df.type)
+    if type == "logit"
+        eq6(δ(df, p2, p3))[2:3]
+    elseif type == "nested logit"
+        merger_NL(df, p2, p3) 
+    end
+end
+s(df, p) = s(df, p[1], p[2])
+s2(p, df) = s(df, p)[1];  s3(p, df) = s(df, p)[2]
+
+"""Estimate price derivatives of market shares at p2,p3"""
+mygrad(f,x,df) = FiniteDifferences.grad(central_fdm(5, 1), x -> f(x, df), x)
+∂s2∂p2(p, df) = mygrad(s2, p, df)[1][1];  ∂s2∂p3(p, df) = mygrad(s2, p, df)[1][2]
+∂s3∂p2(p, df) = mygrad(s3, p, df)[1][1];  ∂s3∂p3(p, df) = mygrad(s3, p, df)[1][2]
+
+"""Residuals function to find root -- find p2,p3 that sets F[1] = 0 = F[2]"""
+function price_eqations!(F, p, df)
+    mc = df.mc[2:3]
+    F[1] = s2(p, df) + (p[1] - mc[1])*∂s2∂p2(p, df) + (p[2] - mc[2])*∂s3∂p2(p, df)
+    F[2] = s3(p, df) + (p[1] - mc[1])*∂s2∂p3(p, df) + (p[2] - mc[2])*∂s3∂p3(p, df)
+end
+
+"""Return vector of 5 product prices after merger of firms 2 and 3"""
+function p_soln(df)
+    sort!(df, :prodid)
+    p0 = df.pjn[2:3]
+    # Solve system of equations for (p2,p3), using finite differencing
+    f!(F, p) = price_eqations!(F, p, df)
+    p2p3 = nlsolve(f!, p0).zero
+    return [df.pjn[1]; p2p3; df.pjn[4:5]]
+end
+
+"""Return percentage point increase from old to new"""
+percent_inc(p_old, p_new) = (p_new / p_old - 1) * 100
+
+df1z = copy(df1b)
+df1z[!, :type] .= "logit"
+# Add new prices for products 2 and 3 after merger of firms 2 and 3
+df1z.pjn_merge = combine(p_soln, groupby(df1z, :market)).x1
+# Add percentage point increases in prices
+@chain df1z @transform!(:pjn_incr = percent_inc.(:pjn, :pjn_merge))
+# Calculate average percentage point increase for products 2 and 3
+@chain df1z begin
+    @subset(:prodid .∈ [2:3])
+    groupby(:prodid)
+    @combine($("Mean Price Increase (ppt)") = mean(:pjn_incr))
+    latexify(fmt=FancyNumberFormatter(3))
+end
+
+
+
+#! NESTED LOGIT -- use reg2e_ss for δ predictions
+
+"""Estimate Nested Logit δ as a function of new p2, p3, given data and IV estimates.
+    Removing the σ⋅log(sⱼₕₙ) term from the regression prediction to get δ instead of ln(sj/s0)
+"""
+δNL(df, p2, p3) = @chain df replace_p2p3(p2, p3) @transform(:sjhn = 1) predict(reg2e_ss, _)
+
+"""Estimate Nested Logit market shares of goods 2 and 3 for a single-market dataframe"""
+function merger_NL(d, p2, p3)
+    σ = get_coef(reg2e_ss, "log(sjhn)")
+    df = copy(d)
+    df.δ_hat = δNL(d, p2, p3)
+    @chain df begin
+        groupby(:group)
+        @transform!(:Dh = sum(exp.(:δ_hat / (1-σ))))
+        @transform!(:D_sum = sum(:Dh.^(1-σ)) + 1)
+        @transform!(:sjn_hat = exp.(:δ_hat / (1-σ)) ./ (:Dh.^σ .* :D_sum))
+    end
+    df.sjn_hat[2:3]
+end
+
+
+df2z = copy(df2e)
+df2z[!, :type] .= "nested logit"
+# Add new prices for products 2 and 3 after merger of firms 2 and 3
+@time df2z.pjn_merge = combine(p_soln, groupby(df2z, :market)).x1
+# Add percentage point increases in prices
+@chain df2z @transform!(:pjn_incr = percent_inc.(:pjn, :pjn_merge))
+# Calculate average percentage point increase for products 2 and 3
+@chain df2z begin
+    @subset(:prodid .∈ [2:3])
+    groupby(:prodid)
+    @combine($("Mean Price Increase (ppt)") = mean(:pjn_incr))
+    latexify(fmt=FancyNumberFormatter(3))
+end
 
 
 
@@ -932,17 +1066,30 @@ print("")
 print(summary(m2))
 """
 
-
-
-
 """To use R package `mlogit`: Needed to run `install.packages("mlogit")` in R terminal. Would not work from here or in Julia terminal."""
 
 
 
 
+#! SOLVING NONLINEAR EQUATIONS
+using NLsolve
+function f!(F, x)
+    F[1] = (x[1]+3)*(x[2]^3-7)+18
+    F[2] = sin(x[2]*exp(x[1])-1)
+end
+nlsolve(f!, [0.1; 1.2], autodiff = :forward)
 
+# Solving nonlinear equation with extra function arguments
+function g!(F, x, p)
+    F[1] = x[1]^2 * (x[2]-3)*p[1]
+    F[2] = x[1]^3 * 8*x[2]*p[2]
+end
+# anonomous function
+nlsolve((F,x) -> g!(F,x,p1), [0.1; 1.2], autodiff = :forward)
 
-
+# wrapper function
+newg!(F, x) = g!(F, x, p)
+nlsolve(newg!, [0.1; 1.2], autodiff = :forward)
 
 
 
