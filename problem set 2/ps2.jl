@@ -1037,6 +1037,11 @@ write_matfile("ps2.mat";
 
 write_matfile("iv.mat"; iv = iv)
 
+"""
+The data was transformed in a way that could be used in MatLab.
+The rest of this problem was completed in MatLab, in file rc_dc_acw.m
+"""
+
 
 
 
